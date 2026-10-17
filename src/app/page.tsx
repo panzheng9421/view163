@@ -2,15 +2,11 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { Header } from '@/components/header';
 import { RecommendSection } from '@/components/douban-section';
 import { DetailModal } from '@/components/detail-modal';
 import { AggregatedCard, aggregateResults } from '@/components/video-card';
-import { PosterSkeleton } from '@/components/states';
-import { Reveal } from '@/components/reveal';
-import { CATEGORY_ORDER, CATEGORY_TO_SLUG } from '@/lib/categories';
 import {
   useAppStore,
   resolveSource,
@@ -69,9 +65,7 @@ function HotKeywordPill({
   });
   const title = query.data?.items?.[0]?.title;
   if (query.isLoading) {
-    return (
-      <span className="inline-block h-9 w-20 rounded-pill bg-black/[0.04] dark:bg-white/5 ring-1 ring-black/[0.08] dark:ring-white/10" />
-    );
+    return <span className="inline-block h-9 w-20 rounded-full bg-chip animate-pulse" />;
   }
   if (!title) return null;
   return (
@@ -79,12 +73,7 @@ function HotKeywordPill({
       type="button"
       title={title}
       onClick={() => onPick(title)}
-      className={cn(
-        'max-w-[11rem] px-4 py-1.5 rounded-pill text-sm',
-        'bg-black/[0.04] dark:bg-white/5 ring-1 ring-black/[0.08] dark:ring-white/10',
-        'text-muted hover:text-accent hover:ring-accent/40 active:scale-[0.98]',
-        'transition-[color,box-shadow,transform] duration-700 ease-swift'
-      )}
+      className="max-w-[10rem] px-4 py-1.5 rounded-full text-sm bg-chip text-muted transition-colors hover:text-accent"
     >
       <span className="block truncate">{title}</span>
     </button>
@@ -221,8 +210,9 @@ function HomeContent() {
   useEffect(() => setVisibleCount(RESULT_PAGE_SIZE), [groups]);
 
   /*
-   * 搜索胶囊：Double-Bezel（外壳留边 + 内芯承载输入区，同心圆角）。
-   * Bento 左块与「有搜索」单行态共用同一份；两处互斥渲染，不会同时挂载 ref。
+   * 搜索胶囊（旧版规格）：输入框与搜索按钮合并为一个圆角矩形，
+   * 内部无边框，焦点态由容器统一表达；下拉展开时改为「上圆下直」，
+   * 与下方浮层拼成同一个面板。
    */
   const searchBox = (
     <div ref={searchHistory.containerRef} className="relative w-full max-w-2xl">
@@ -233,71 +223,67 @@ function HomeContent() {
           runSearch(input);
         }}
       >
-        {/* 外壳：p-1.5 留出托盘边；展开时底边改直，与下方浮层拼成同一面板 */}
         <div
           className={cn(
-            'bezel transition-[border-radius,box-shadow] duration-700 ease-swift focus-within:shadow-glow',
-            searchHistory.visible && 'rounded-b-none'
+            'flex items-stretch min-h-12 pl-4 border',
+            'transition-[background-color,border-color,border-radius] duration-200',
+            searchHistory.visible
+              ? // 展开时：外框（含上圆角）沿用输入框的聚焦样式不变，只把底边改为内部分隔线，
+                // 使输入区在展开状态下仍是边界清晰的独立输入框，而非与列表糊成一片
+                'rounded-t-xl rounded-b-none border-accent border-b-line bg-surface-raised'
+              : 'rounded-xl border-line bg-chip focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/40'
           )}
         >
-          {/* 内芯：输入框与按钮合并，内部无边框，焦点态由外壳统一表达 */}
-          <div
+          <input
+            ref={inputRef}
+            className="flex-1 min-w-0 pr-2 bg-transparent text-sm text-content placeholder:text-faint focus:outline-none"
+            placeholder="输入影片名称..."
+            value={input}
+            maxLength={100}
+            onChange={(e) => {
+              setInput(e.target.value);
+              searchHistory.resetActive();
+            }}
+            onFocus={searchHistory.onFocus}
+            onKeyDown={(e) => searchHistory.onKeyDown(e, pickHistory)}
+            role="combobox"
+            aria-label="搜索影片"
+            aria-expanded={searchHistory.visible}
+            aria-controls="home-search-history"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              searchHistory.visible && searchHistory.activeIndex >= 0
+                ? `home-search-history-${searchHistory.activeIndex}`
+                : undefined
+            }
+          />
+          {input && (
+            <button
+              type="button"
+              className="shrink-0 self-center mr-1 p-1.5 rounded-full text-faint hover:text-content hover:bg-hover transition-colors"
+              onClick={() => {
+                setInput('');
+                searchHistory.resetActive();
+                inputRef.current?.focus();
+              }}
+              aria-label="清空"
+            >
+              <Icon name="close" className="w-4 h-4" />
+            </button>
+          )}
+          {/* 主操作按钮：贴合搜索框右端——右侧圆角跟随容器、左侧直角，展开时右下角
+              跟着容器一起改直角；按压改用亮度反馈（缩放会让贴合边缘露出缝隙） */}
+          <button
+            type="submit"
             className={cn(
-              'bezel-core flex items-stretch min-h-12 pl-4 transition-[border-radius] duration-700 ease-swift',
-              searchHistory.visible && 'rounded-b-none'
+              'btn-primary shrink-0 px-4 font-medium transition-[background-color,filter] active:brightness-90',
+              '!rounded-l-none',
+              searchHistory.visible ? '!rounded-tr-xl !rounded-br-none' : '!rounded-r-xl'
             )}
           >
-            <input
-              ref={inputRef}
-              className="flex-1 min-w-0 pr-2 bg-transparent text-sm text-content placeholder:text-faint focus:outline-none"
-              placeholder="输入影片名称..."
-              value={input}
-              maxLength={100}
-              onChange={(e) => {
-                setInput(e.target.value);
-                searchHistory.resetActive();
-              }}
-              onFocus={searchHistory.onFocus}
-              onKeyDown={(e) => searchHistory.onKeyDown(e, pickHistory)}
-              role="combobox"
-              aria-label="搜索影片"
-              aria-expanded={searchHistory.visible}
-              aria-controls="home-search-history"
-              aria-autocomplete="list"
-              aria-activedescendant={
-                searchHistory.visible && searchHistory.activeIndex >= 0
-                  ? `home-search-history-${searchHistory.activeIndex}`
-                  : undefined
-              }
-            />
-            {input && (
-              <button
-                type="button"
-                className="shrink-0 self-center mr-1 p-1.5 rounded-pill text-faint hover:text-content hover:bg-black/5 dark:hover:bg-white/10 transition-colors duration-700 ease-swift"
-                onClick={() => {
-                  setInput('');
-                  searchHistory.resetActive();
-                  inputRef.current?.focus();
-                }}
-                aria-label="清空"
-              >
-                <Icon name="close" className="w-4 h-4" />
-              </button>
-            )}
-            {/* 提交按钮贴合内芯右端：右圆角取内芯值、左侧直角；
-                按压用亮度反馈（缩放会让贴合边缘露出缝隙） */}
-            <button
-              type="submit"
-              className={cn(
-                'btn-primary shrink-0 px-5 font-medium !rounded-l-none !rounded-r-core',
-                'transition-[background-color,filter] active:brightness-90',
-                searchHistory.visible && '!rounded-br-none'
-              )}
-            >
-              <Icon name="search" className="w-4 h-4" />
-              搜索
-            </button>
-          </div>
+            <Icon name="search" className="w-4 h-4" />
+            搜索
+          </button>
         </div>
       </form>
 
@@ -319,139 +305,60 @@ function HomeContent() {
     <div className="min-h-screen flex flex-col">
       <Header />
 
-      <main className="relative flex-1 max-w-shell w-full mx-auto px-5 md:px-8">
-        {/*
-          首屏氛围：只保留一团品牌青蓝光斑（原来还有紫 / 粉两团，属 AI 生成 hero 的标配模板，
-          且多色叠加会与海报抢色）。hidden md:block —— 移动端的大半径 blur 会持续触发合成，掉帧。
-        */}
+      <main className="relative flex-1 max-w-[1440px] w-full mx-auto px-4 py-6">
+        {/* 首屏氛围渐变 */}
         {!urlQuery && (
-          <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[600px] -z-10 overflow-hidden">
-            <div
-              className="hidden md:block absolute -top-40 left-1/2 -translate-x-1/2 w-[880px] h-[880px] rounded-full opacity-0 dark:opacity-45 blur-3xl animate-glow-drift"
-              style={{ background: 'radial-gradient(circle, rgba(0,184,230,0.5), transparent 62%)' }}
-            />
-            <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-[rgb(var(--c-page))]" />
-          </div>
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 h-[420px] -z-10"
+            style={{
+              background:
+                'radial-gradient(60% 60% at 50% 0%, rgba(35,173,229,0.10) 0%, rgba(35,173,229,0.03) 45%, transparent 75%)',
+            }}
+          />
         )}
 
-        {/*
-          搜索区：无搜索时走非对称 Bento —— 左 7 列承载主张与搜索框，右 5 列三个错落 tile
-          （self-end 让右列底部对齐，打破对称）。有搜索时收成单行，把纵向空间全留给结果。
-          右侧 tile 只用站内既有数据（分类常量 + 榜单路由），不新增请求、不暴露任何源信息。
-        */}
-        {!urlQuery ? (
-          <section className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 pt-10 md:pt-20 pb-10 md:pb-16">
-            <div className="md:col-span-7 flex flex-col justify-center">
-              <p className="eyebrow w-fit mb-5">免费 · 聚合 · 即点即看</p>
-              <h1 className="text-display-md md:text-display-lg font-display leading-none mb-5">
-                <span className="brand-gradient">view163</span>
-              </h1>
-              <p className="text-sm sm:text-base text-muted max-w-md">
-                免费搜索 · 聚合海量影视 · 即点即看，无需注册
-              </p>
-              <div className="mt-8">{searchBox}</div>
-              {/* 热门词：桌面单行横滑（9 个 pill 在 7 列宽里换行会剩孤行），移动端允许换行 */}
-              <div className="mt-6 flex flex-wrap md:flex-nowrap items-center gap-2 md:overflow-x-auto md:py-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <span className="eyebrow shrink-0">热门</span>
-                {HOT_KEYWORD_SOURCES.map((config) => (
-                  <HotKeywordPill key={config.key} config={config} onPick={runSearch} />
-                ))}
-              </div>
+        {/* 搜索区 */}
+        <section className={cn('flex flex-col items-center', urlQuery ? 'mb-6' : 'mt-8 mb-8')}>
+          {!urlQuery && (
+            <header className="text-center mb-6">
+              <h1 className="text-4xl sm:text-5xl font-bold brand-gradient">view163</h1>
+            </header>
+          )}
+          {urlQuery && <h1 className="sr-only">view163 视频搜索</h1>}
+          {searchBox}
+          {/* 热门搜索词：各榜单榜首真片名（无搜索时才占首屏位置） */}
+          {!urlQuery && (
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              {HOT_KEYWORD_SOURCES.map((config) => (
+                <HotKeywordPill key={config.key} config={config} onPick={runSearch} />
+              ))}
             </div>
-
-            {/* 右栏入口 Bento：外层用 div 承载（原来是 Link 嵌 Link，<a> 套 <a> 属非法 HTML，
-                浏览器会强行拆开外层链接，DOM 结构错乱导致右侧 tile 错位） */}
-            <div className="md:col-span-5 self-end grid grid-cols-2 gap-3 md:gap-4">
-              <div className="col-span-2 bezel">
-                <div className="bezel-core p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="eyebrow">分类速览</p>
-                    <span className="text-2xs text-faint num">{CATEGORY_ORDER.length} 大分类</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {CATEGORY_ORDER.map((cat, i) => (
-                      <Link
-                        key={cat}
-                        href={`/category/${CATEGORY_TO_SLUG[cat]}`}
-                        className="flex items-center justify-between rounded-tile bg-black/[0.03] dark:bg-white/5 px-3 py-2.5 ring-1 ring-black/[0.06] dark:ring-white/[0.08] transition-[background-color,box-shadow] duration-700 ease-swift hover:bg-black/[0.05] dark:hover:bg-white/[0.08]"
-                      >
-                        <span className="text-[15px] font-medium text-content">{cat}</span>
-                        <span className="num text-2xs text-faint">0{i + 1}</span>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <Link
-                href="/rank/douban_tv_hot"
-                className="bezel group transition-transform duration-700 ease-swift hover:-translate-y-1 active:scale-[0.98]"
-              >
-                <div className="bezel-core p-4 h-full min-h-[8.5rem] flex flex-col justify-between">
-                  <p className="eyebrow">热播剧集</p>
-                  <div className="flex items-end justify-between gap-2">
-                    <p className="font-display text-2xl font-bold text-content leading-none">正在热播</p>
-                    <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-black/[0.04] dark:bg-white/10 text-muted transition-[background-color,color,transform] duration-700 ease-swift group-hover:bg-accent group-hover:text-on-accent group-hover:translate-x-0.5">
-                      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6l6 6-6 6" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-              </Link>
-
-              <Link
-                href="/rank/douban_top250"
-                className="bezel group transition-transform duration-700 ease-swift hover:-translate-y-1 active:scale-[0.98]"
-              >
-                <div className="bezel-core p-4 h-full min-h-[8.5rem] flex flex-col justify-between">
-                  <p className="eyebrow">高分经典</p>
-                  <div className="flex items-end justify-between gap-2">
-                    <p className="font-display text-2xl font-bold text-content leading-none num">TOP 250</p>
-                    <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-black/[0.04] dark:bg-white/10 text-muted transition-[background-color,color,transform] duration-700 ease-swift group-hover:bg-accent group-hover:text-on-accent group-hover:translate-x-0.5">
-                      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6l6 6-6 6" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            </div>
-          </section>
-        ) : (
-          <section className="pt-8 mb-6">
-            <h1 className="sr-only">view163 视频搜索</h1>
-            {searchBox}
-          </section>
-        )}
-
+          )}
+        </section>
 
         {/* 搜索结果 */}
         {urlQuery && (
           <section aria-label="搜索结果" className="mb-10">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="eyebrow w-fit mb-2">搜索结果</p>
-                <h2 className="text-sm text-muted">
-                  “<span className="text-content">{urlQuery}</span>” 的搜索结果
-                  {isSearching ? (
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm text-muted">
+                “<span className="text-content">{urlQuery}</span>” 的搜索结果
+                {isSearching ? (
+                  <span className="text-faint">
+                    （已就绪 {streamedOutcomes.length}/{selectedSources.length} 个源…）
+                  </span>
+                ) : (
+                  searchQuery.data && (
                     <span className="text-faint">
-                      （已就绪 {streamedOutcomes.length}/{selectedSources.length} 个源…）
+                      （{groups.length} 部影片 · {list.length} 条结果{failures.length > 0 && `，${failures.length} 个源失败`}）
                     </span>
-                  ) : (
-                    searchQuery.data && (
-                      <span className="text-faint num">
-                        （{groups.length} 部影片 · {list.length} 条结果
-                        {failures.length > 0 && `，${failures.length} 个源失败`}）
-                      </span>
-                    )
-                  )}
-                </h2>
-              </div>
+                  )
+                )}
+              </h2>
             </div>
 
             {failures.length > 0 && (
-              <div className="mb-3 text-xs bg-black/[0.04] dark:bg-white/5 ring-1 ring-black/[0.08] dark:ring-white/10 rounded-tile px-3 py-2 flex flex-wrap gap-x-3 gap-y-1">
+              <div className="mb-3 text-xs bg-chip rounded-lg px-3 py-2 flex flex-wrap gap-x-3 gap-y-1">
                 <span className="text-faint">{isSearching ? '以下源暂时无响应：' : '部分点播源请求失败：'}</span>
                 {failures.map((f) => (
                   <span key={f.sourceKey} className={f.timedOut ? 'text-warning' : 'text-faint'}>
@@ -463,7 +370,7 @@ function HomeContent() {
             )}
 
             {offSubscriptionSources.length > 0 && (
-              <div className="mb-3 text-xs text-faint bg-black/[0.04] dark:bg-white/5 ring-1 ring-black/[0.08] dark:ring-white/10 rounded-tile px-3 py-2">
+              <div className="mb-3 text-xs text-faint bg-chip rounded-lg px-3 py-2">
                 {offSubscriptionSources.length} 个源所属的订阅已停用，未参与本次搜索（在设置 → 数据源订阅中可重新启用）：
                 {offSubscriptionSources.map((key) => sourceName(key)).join('、')}
               </div>
@@ -473,7 +380,7 @@ function HomeContent() {
               <NoSourceGuide hasSources={customAPIs.length > 0 || envSources.length > 0} />
             ) : list.length > 0 ? (
               <>
-                <div className="poster-grid">
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3 items-start">
                   {visibleGroups.map((group) => (
                     <AggregatedCard
                       key={group.key}
@@ -486,22 +393,18 @@ function HomeContent() {
                   ))}
                 </div>
                 {groups.length > visibleCount && (
-                  <div className="flex justify-center mt-8">
-                    {/* Button-in-Button：尾部箭头嵌在自己的小圆里，hover 时斜向位移 */}
+                  <div className="flex justify-center mt-4">
                     <button
-                      className="group btn-ghost rounded-pill px-6 py-3 active:scale-[0.98]"
+                      className="btn-ghost btn-sm"
                       onClick={() => setVisibleCount((v) => v + RESULT_PAGE_SIZE)}
                     >
-                      加载更多（还有 <span className="num">{groups.length - visibleCount}</span> 部）
-                      <span className="ml-2 inline-flex items-center justify-center w-8 h-8 rounded-pill bg-black/5 dark:bg-white/10 transition-transform duration-700 ease-swift group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
-                        <Icon name="chevronDown" className="w-4 h-4" />
-                      </span>
+                      加载更多（还有 {groups.length - visibleCount} 部）
                     </button>
                   </div>
                 )}
               </>
             ) : isSearching ? (
-              <PosterSkeleton count={12} />
+              <ResultsSkeleton />
             ) : (
               <EmptyState
                 icon="search"
@@ -513,16 +416,14 @@ function HomeContent() {
           </section>
         )}
 
-        {/* 首页推荐（有搜索时隐藏）：按分类横向滑轨分区 */}
+        {/* 首页推荐（有搜索时隐藏） */}
         {!urlQuery && (
-          <Reveal className="mt-14">
-            <RecommendSection
-              onPick={(title) => {
-                setInput(title);
-                runSearch(title);
-              }}
-            />
-          </Reveal>
+          <RecommendSection
+            onPick={(title) => {
+              setInput(title);
+              runSearch(title);
+            }}
+          />
         )}
       </main>
 
@@ -544,25 +445,40 @@ function HomeContent() {
   );
 }
 
+function ResultsSkeleton() {
+  return (
+    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3 items-start">
+      {Array.from({ length: 12 }).map((_, i) => (
+        // 结构对齐真实结果卡（竖版海报 + 文字块），避免占位与真实卡片形状不符
+        <div key={i} className="card flex flex-col overflow-hidden">
+          <div className="aspect-[2/3] bg-chip animate-pulse" />
+          <div className="p-2.5 space-y-2">
+            <div className="h-4 w-3/4 rounded bg-chip animate-pulse" />
+            <div className="h-3 w-1/2 rounded bg-chip animate-pulse" />
+            <div className="h-3 w-full rounded bg-chip animate-pulse" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** 无点播源 / 未勾选点播源时的引导（替代旧版首屏静默空白） */
 function NoSourceGuide({ hasSources = false }: { hasSources?: boolean }) {
   return (
-    <div className="bezel max-w-lg mx-auto">
-      <div className="bezel-core p-10 text-center">
-        <h3 className="text-content font-medium mb-2">{hasSources ? '尚未勾选点播源' : '先添加一个点播源'}</h3>
+    <div className="border border-dashed border-line rounded-xl p-10 text-center max-w-lg mx-auto">
+      <h3 className="text-content font-medium mb-2">{hasSources ? '尚未勾选点播源' : '先添加一个点播源'}</h3>
       <p className="text-sm text-muted leading-relaxed">
         {hasSources ? (
           <>点击右上角「设置」，勾选要参与搜索的点播源后重新搜索。</>
         ) : (
           <>
             view163 不内置任何采集站。点击右上角「设置 → 添加 API」，填入一个
-              Apple CMS 采集站地址（如{' '}
-              <code className="text-accent text-xs">https://example.com/api.php/provide/vod</code>），
-              勾选后即可开始搜索。
-            </>
-          )}
-        </p>
-      </div>
+            Apple CMS 采集站地址（如 <code className="text-accent text-xs">https://example.com/api.php/provide/vod</code>），
+            勾选后即可开始搜索。
+          </>
+        )}
+      </p>
     </div>
   );
 }

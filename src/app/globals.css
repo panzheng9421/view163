@@ -3,25 +3,22 @@
 @tailwind utilities;
 
 /*
- * 语义化配色（RGB 三元组，供 Tailwind 以 <alpha-value> 注入透明度）。
- * 深色主题为 OLED 中性黑（去蓝味）：影视站的核心资产是海报，底色必须低饱和近中性，
- * 否则会与高饱和海报抢色、整屏发灰，暖色海报边缘发脏。
- * 浅色主题为对应的白底变体。
+ * 语义化配色（RGB 三元组，供 Tailwind 以 <alpha-value> 注入透明度）：
+ * 深色主题沿用旧版 LibreTV 配色；浅色主题为对应的白底变体。
  */
 :root {
-  --c-page: 236 238 241;           /* #eceef1 比卡片深一档，白卡才浮得出来（原 #f6f7f9 与白卡几乎同色） */
+  --c-page: 246 247 249;           /* #f6f7f9 */
   --c-surface: 255 255 255;        /* #ffffff */
   --c-surface-raised: 255 255 255;
   --c-card: 255 255 255;
-  --c-chip: 227 231 236;           /* #e3e7ec */
-  --c-hover: 218 222 229;          /* #dadee5 */
-  --c-line: 224 227 232;           /* #e0e3e8（仅留给抽屉内分隔等极少数处） */
-  --c-content: 16 17 19;           /* #101113 */
+  --c-chip: 238 240 243;           /* #eef0f3 */
+  --c-hover: 233 236 240;          /* #e9ecf0 */
+  --c-line: 224 227 232;           /* #e0e3e8 */
+  --c-content: 26 26 26;           /* #1a1a1a */
   --c-muted: 95 99 104;            /* #5f6368 */
-  --c-faint: 107 114 128;          /* #6b7280（对白底达 AA 4.5:1） */
-  --c-accent: 8 118 148;           /* #087694 青蓝深档：白底不能用 #00b8e6（仅 2.3:1），此值达 5.24:1 */
-  --c-accent-hover: 6 92 116;      /* #065c74 */
-  --c-accent-glow: 8 118 148;      /* 光晕专用，可独立调 alpha 而不影响文字色 */
+  --c-faint: 107 114 128;          /* #6b7280（原 #8a8f98 对白底仅 3.2:1，加深后达到 AA 4.5:1） */
+  --c-accent: 37 99 235;           /* blue-600 */
+  --c-accent-hover: 29 78 216;     /* blue-700 */
   --c-on-accent: 255 255 255;      /* accent 实心底上的文字色 */
   /* 语义状态色（亮色主题取偏深值，保证浅底上的对比度） */
   --c-danger: 220 38 38;           /* red-600 */
@@ -36,56 +33,25 @@
   --c-warning-solid: 180 83 9;     /* amber-700 */
   --c-info-solid: 29 78 216;       /* blue-700 */
   color-scheme: light;
-
-  /* —— 圆角：双边框（Doppelrand）同心体系 —— */
-  --r-shell: 2rem;                     /* 32px 双边框外壳 */
-  --r-core: calc(2rem - 0.375rem);     /* 26px 内芯（外壳 p-1.5 = 6px，保证同心） */
-  --r-card: 1.25rem;                   /* 20px 常规卡片 */
-  --r-tile: 0.875rem;                  /* 14px 小格 / 剧集按钮 */
-  --r-pill: 9999px;
-  --r-input: 0.75rem;                  /* 12px 输入框 */
-
-  /* —— 阴影：禁硬黑投影，一律「内嵌 1px 白高光 + 大扩散负 spread 环境光」 —— */
-  --sh-glass: inset 0 1px 0 0 rgb(255 255 255 / 0.06), 0 8px 32px -12px rgb(0 0 0 / 0.12);
-  --sh-lift: inset 0 1px 0 0 rgb(255 255 255 / 0.08), 0 18px 48px -20px rgb(0 0 0 / 0.18);
-  --sh-modal: inset 0 1px 0 0 rgb(255 255 255 / 0.1), 0 40px 96px -32px rgb(0 0 0 / 0.32);
-  --sh-glow: 0 0 0 1px rgb(var(--c-accent) / 0.28), 0 12px 40px -16px rgb(var(--c-accent) / 0.35);
-  /* —— Soft Structuralism 柔阴影：亮色专用。
-     多层低偏移叠加成"高散射环境光"，让白卡从银灰页面上浮起来；
-     暗色没有这个概念（暗色靠玻璃 hairline + 自发光），一律 dark:shadow-none 关掉 —— */
-  --sh-soft: 0 1px 1px rgb(16 24 40 / 0.04), 0 2px 4px -1px rgb(16 24 40 / 0.05),
-    0 8px 24px -8px rgb(16 24 40 / 0.08);
-  --sh-soft-lg: 0 1px 1px rgb(16 24 40 / 0.04), 0 4px 10px -2px rgb(16 24 40 / 0.06),
-    0 24px 56px -12px rgb(16 24 40 / 0.12);
-
-  /* —— 字体：英文 Geist → 中文按字符逐个回退到系统栈，无需手动切语言 —— */
-  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Source Han Sans SC',
-    'Noto Sans CJK SC', system-ui, sans-serif;
-
-  /* —— 动效曲线：禁 linear / ease-in-out —— */
-  --ease-swift: cubic-bezier(0.32, 0.72, 0, 1);    /* 主曲线，700ms 级 */
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);  /* 进场 */
 }
 
 .dark {
-  /* OLED 影院玻璃：中性纯黑底 + 品牌青蓝唯一强调色 */
-  --c-page: 5 6 8;                 /* #050608 去蓝味，海报对比度拉满 */
-  --c-surface: 13 14 17;           /* #0d0e11 玻璃面板底 */
-  --c-surface-raised: 17 18 22;    /* #111216 弹窗 / 抽屉 */
-  --c-card: 10 11 14;              /* #0a0b0e 卡片内芯 */
-  --c-chip: 22 24 29;              /* #16181d 输入框 / 胶囊底 */
-  --c-hover: 30 33 39;             /* #1e2127 悬停态 */
-  --c-line: 38 41 48;              /* #262930 仅留给抽屉内分隔等极少数处 */
-  --c-content: 237 239 242;        /* #edeff2 对 page 17.6:1 */
-  --c-muted: 154 161 172;          /* #9aa1ac 对 page 7.8:1 */
-  --c-faint: 123 130 142;          /* #7b828e 对 page 5.2:1（原 #6b7f99 仅 4.3:1，不达 AA） */
-  --c-accent: 0 184 230;           /* #00b8e6 品牌青蓝，全站唯一强调色（8.7:1） */
-  --c-accent-hover: 56 208 255;    /* #38d0ff */
-  --c-accent-glow: 0 184 230;
-  /* 青蓝底亮度高（对白字仅 2.35:1），暗色下实心底改用深色文字 */
-  --c-on-accent: 3 12 18;
-  /* 语义状态色（暗色主题取中等明度值，保证深底上的对比度） */
+  /* 旧版 LibreTV（backup-2025）赛博影视主题（整体调深一档）：深蓝黑底 + 霓虹蓝/粉点缀 */
+  --c-page: 11 16 26;              /* #0b101a 深蓝黑页面底色 */
+  --c-surface: 20 28 41;           /* #141c29 弹窗/抽屉底色 */
+  --c-surface-raised: 20 28 41;
+  --c-card: 13 20 31;              /* #0d141f 卡片底色 */
+  --c-chip: 22 32 46;              /* #16202e 卡片/输入框底色 */
+  --c-hover: 29 42 61;             /* #1d2a3d 悬停态（chip 提亮） */
+  --c-line: 34 48 69;              /* #223045 边框（近似旧版 rgba(0,204,255,.15) 观感） */
+  --c-content: 230 242 255;        /* #e6f2ff 蓝白主文本（--text-color） */
+  --c-muted: 133 153 178;          /* #8599b2 次级文本（--text-muted） */
+  --c-faint: 107 127 153;          /* #6b7f99 三级文本 */
+  --c-accent: 0 184 230;           /* #00b8e6 霓虹蓝主色（--primary-color 调深一档） */
+  --c-accent-hover: 51 214 255;    /* #33d6ff 霓虹蓝浅变体（--primary-light） */
+  /* 霓虹蓝底亮度过高（对白字仅 2.35:1），暗色下实心底改用深色文字 */
+  --c-on-accent: 8 19 31;
+  /* 语义状态色（暗色主题取中等明度值，保证深蓝黑底上的对比度） */
   --c-danger: 239 68 68;           /* red-500 */
   --c-danger-hover: 248 113 113;   /* red-400 */
   --c-success: 34 197 94;          /* green-500 */
@@ -105,123 +71,52 @@ body {
   @apply bg-page text-content antialiased;
 }
 
-body {
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-}
-
-/*
- * 暗色底纹：品牌青蓝径向光晕 + 72px 极淡网格。
- * 全部走 background-attachment: fixed（无额外 DOM、无滚动期重绘）。
- */
+/* 暗色主题：模拟旧版 .page-bg 的深蓝黑纵向渐变 */
 .dark body {
-  background-color: rgb(var(--c-page));
-  background-image:
-    radial-gradient(circle, rgb(var(--c-accent) / 0.18) 0%, transparent 62%),
-    linear-gradient(to right, rgb(255 255 255 / 0.022) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(255 255 255 / 0.022) 1px, transparent 1px);
-  background-size: 900px 900px, 72px 72px, 72px 72px;
-  background-position: 50% -260px, 0 0, 0 0;
-  background-attachment: fixed, fixed, fixed;
-  background-repeat: no-repeat, repeat, repeat;
+  background: linear-gradient(180deg, rgb(11 16 26), rgb(20 28 41)) fixed;
 }
 
-/* 移动端：多层 fixed 背景会持续触发合成，只保留光晕 */
-@media (max-width: 767px) {
-  .dark body {
-    background-image: radial-gradient(circle, rgb(var(--c-accent) / 0.14) 0%, transparent 62%);
-    background-size: 700px 700px;
-  }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
 }
 
-/* 噪点：只挂 fixed + pointer-events-none 的伪元素，内联 SVG 无额外请求 */
-.dark body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-  opacity: 0.03;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-/*
- * 说明：发丝线一律写成「亮色黑 x% / 暗色白 y%」双轨。
- * 只写 ring-white/10 的话亮色主题下是白底白线，边框直接消失。
- */
 @layer components {
-  /*
-   * 双边框容器：外壳（铝托盘）+ 内芯（玻璃板），同心圆角。
-   * 亮色走 Soft Structuralism：托盘底 + 柔阴影让整组浮起来，ring 只做极淡收边（不是 1px 灰线）；
-   * 暗色走 Ethereal Glass：白 10% 发丝线 + 无外阴影。
-   */
-  .bezel {
-    @apply rounded-shell p-1.5 bg-black/[0.04] ring-1 ring-black/[0.05] shadow-soft dark:bg-white/5 dark:ring-white/10 dark:shadow-none;
-  }
-  .bezel-core {
-    @apply rounded-core bg-card;
-  }
-  /* 卡片级双边框：海报墙密度高，外壳只留 3px 托盘边、圆角相应收小（32px 在小卡上过圆） */
-  .bezel-card {
-    @apply rounded-card p-[3px] bg-black/[0.04] ring-1 ring-black/[0.05] shadow-soft dark:bg-white/5 dark:ring-white/10 dark:shadow-none;
-  }
-  .bezel-card-core {
-    @apply rounded-[1.0625rem] bg-card overflow-hidden;
-  }
-  /* 卡片：层级改用柔阴影（亮色）/ 发丝 ring（暗色），不再用 1px 实线描边 */
   .card {
-    @apply rounded-card bg-card ring-1 ring-black/[0.05] shadow-soft dark:ring-white/10 dark:shadow-none overflow-hidden;
-    @apply transition-[transform,box-shadow] duration-700 ease-swift;
+    @apply bg-card border border-line rounded-lg overflow-hidden transition-all duration-200;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-pill px-4 py-2 text-sm;
-    @apply transition-[background-color,color,transform,box-shadow] duration-700 ease-swift;
-    @apply active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
     /* 统一焦点环：键盘用户可见，与 .input 同一规格 */
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40;
-    @apply disabled:opacity-40 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-accent text-on-accent hover:bg-accent-hover hover:shadow-glow;
+    @apply btn bg-accent text-on-accent hover:bg-accent-hover;
   }
   .btn-ghost {
-    @apply btn bg-black/[0.04] text-muted ring-1 ring-black/[0.06] hover:bg-black/[0.07] hover:text-content dark:bg-white/5 dark:ring-white/10 dark:hover:bg-white/10;
+    @apply btn bg-chip text-muted hover:bg-hover hover:text-content border border-line;
   }
   .input {
-    @apply rounded-input bg-chip px-3 py-2 text-sm text-content placeholder:text-faint;
-    @apply ring-1 ring-inset ring-black/[0.06] dark:ring-white/10; /* 替掉 border-line */
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40;
+    @apply bg-chip border border-line rounded-md px-3 py-2 text-sm text-content placeholder:text-faint;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:border-accent;
   }
   .tag {
-    @apply inline-flex items-center text-2xs px-2 py-0.5 rounded-pill;
+    @apply inline-flex items-center text-xs px-1.5 py-0.5 rounded-full;
   }
-  /* 小尺寸按钮：定义在 .btn-* 之后，确保尺寸覆盖生效 */
+  /* 小尺寸按钮：定义在 .btn-* 之后，确保尺寸覆盖生效（与 .btn-primary / .btn-ghost 组合使用） */
   .btn-sm {
-    @apply btn px-3 py-1 text-xs;
+    @apply btn px-2.5 py-1 text-xs;
   }
   /* 胶囊控件（筛选、分类标签）：统一内边距与圆角 */
   .chip {
-    @apply inline-flex items-center gap-1 rounded-pill px-2.5 py-0.5 text-xs transition-colors;
-  }
-  /* 数字（评分 / 年份 / 集数）：等宽对齐，读数才像流媒体 */
-  .num {
-    font-variant-numeric: tabular-nums;
-  }
-  /* 大标题前的 eyebrow 徽章 */
-  .eyebrow {
-    @apply inline-flex items-center rounded-pill px-3 py-1;
-    @apply text-eyebrow uppercase text-accent bg-accent/10 ring-1 ring-accent/20;
-  }
-  /* 统一海报网格：消灭 3 套不一致的 grid-cols */
-  .poster-grid {
-    @apply grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4;
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition-colors;
   }
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    @apply bg-black/15 dark:bg-white/10 rounded-pill;
+    @apply bg-line rounded-full;
   }
 }
 
@@ -234,28 +129,28 @@ body {
 .episode-active {
   background: rgb(var(--c-accent)) !important;
   border-color: rgb(var(--c-accent)) !important;
-  /* 暗色下青蓝底对白字对比度不足，统一用 on-accent（亮色白 / 暗色深） */
+  /* 暗色下霓虹蓝底对白字对比度不足，统一用 on-accent（亮色白 / 暗色深） */
   color: rgb(var(--c-on-accent)) !important;
-  box-shadow: var(--sh-glow) !important;
 }
 
-/* 品牌渐变字：全站唯一渐变，与 logo 同色相深浅（青蓝 → 深青） */
+/* 品牌渐变字（沿用旧版 LibreTV 的霓虹蓝→霓虹粉） */
 .brand-gradient {
-  background: linear-gradient(135deg, #00b8e6 0%, #0aa3c9 100%);
+  background: linear-gradient(to right, #00ccff, #ff3c78);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
 }
 
-/* 系统开启「减少动效」时全站动效归零（无障碍兜底） */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+/* LIVE 呼吸红点（直播页标识） */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #ef4444;
+  animation: live-breathe 2s ease-in-out infinite;
+}
+@keyframes live-breathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
 }

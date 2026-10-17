@@ -160,7 +160,7 @@ function TabRow<T extends string>({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={cn('flex w-full gap-1', variant === 'primary' && 'p-0.5 bg-chip rounded-tile')}
+      className={cn('flex w-full gap-1', variant === 'primary' && 'p-0.5 bg-chip rounded-lg')}
       onKeyDown={(e) => {
         if (e.key === 'ArrowRight') {
           e.preventDefault();
@@ -184,7 +184,7 @@ function TabRow<T extends string>({
               variant === 'primary'
                 ? cn(
                     'px-2 py-1.5 text-xs',
-                    active ? 'bg-surface-raised text-accent font-medium shadow-glass' : 'text-muted hover:text-content'
+                    active ? 'bg-surface-raised text-accent font-medium shadow-sm' : 'text-muted hover:text-content'
                   )
                 : cn(
                     'px-2.5 py-1 text-xs',
@@ -465,7 +465,7 @@ function VodSourceRow({
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-content truncate">
             {api.name}
-            {api.isAdult && <span className="text-danger text-xs ml-1">(18+)</span>}
+            {api.isAdult && <span className="text-pink-400 text-xs ml-1">(18+)</span>}
             {isEnv && (
               <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-chip text-faint align-middle">
                 部署者预置
@@ -881,7 +881,7 @@ function SourceSubscriptions() {
 
       {/* 发布结果：链接公开可读、粘贴板也可能随时清理，这些风险直接写在这里而不是只在 toast 里闪一下 */}
       {published && (
-        <div className="mb-3 rounded-tile ring-1 ring-black/[0.08] dark:ring-white/10 bg-chip/60 p-2.5">
+        <div className="mb-3 rounded-lg border border-line bg-chip/60 p-2.5">
           <div className="flex items-center gap-1.5">
             <input
               readOnly
@@ -1204,7 +1204,7 @@ function SourceForm({
   };
 
   return (
-    <div className="space-y-2 ring-1 ring-black/[0.08] dark:ring-white/10 rounded-tile p-3 bg-chip mb-2">
+    <div className="space-y-2 border border-line rounded-lg p-3 bg-chip mb-2">
     <input
       className="input w-full"
       aria-label="点播源名称"
@@ -1229,7 +1229,7 @@ function SourceForm({
       <label className="flex items-center gap-2 text-xs text-muted">
         <input
           type="checkbox"
-          className="h-3.5 w-3.5 accent-accent"
+          className="h-3.5 w-3.5 accent-pink-500"
           checked={isAdult}
           onChange={(e) => setIsAdult(e.target.checked)}
         />

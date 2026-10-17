@@ -8,7 +8,6 @@ import { useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import type { DoubanItem } from '@/lib/types';
 import { DoubanCard } from './video-card';
-import { Reveal } from './reveal';
 
 const HOT_MOVIE_RAIL = { title: '热播电影', type: 'movie', tag: '热门', moreHref: '/explore/hot-movie' } as const;
 const ANIME_RAIL = { title: '动画新番', type: 'tv', tag: '日本动画', moreHref: '/explore/anime' } as const;
@@ -220,13 +219,9 @@ function Rail({
   };
 
   return (
-    <Reveal>
-      <section aria-label={title} className="mb-10 md:mb-12">
+      <section aria-label={title} className="mb-8">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold text-content flex items-center gap-2">
-          <span className="inline-block w-1 h-4 rounded-pill bg-accent/70" />
-          {title}
-        </h2>
+        <h2 className="text-base font-semibold text-content">{title}</h2>
         <div className="hidden sm:flex items-center gap-1">
           <RailArrow dir="left" disabled={!canLeft} onClick={() => page(-1)} />
           <RailArrow dir="right" disabled={!canRight} onClick={() => page(1)} />
@@ -245,17 +240,17 @@ function Rail({
           className="flex gap-3 overflow-x-auto scrollbar-thin snap-x snap-mandatory pb-2"
         >
           {items.map((item) => (
-            <div key={item.id} className="w-[124px] sm:w-[148px] shrink-0 snap-start">
+            <div key={item.id} className="w-[108px] sm:w-[124px] shrink-0 snap-start">
               <DoubanCard item={item} onClick={() => onPick(item.title)} />
             </div>
           ))}
           {moreHref && (
             <Link
               href={moreHref}
-              className="w-[124px] sm:w-[148px] shrink-0 snap-start group"
+              className="w-[108px] sm:w-[124px] shrink-0 snap-start group"
               aria-label={`${title} 查看更多`}
             >
-              <div className="aspect-[2/3] rounded-tile ring-1 ring-black/[0.08] dark:ring-white/10 bg-black/[0.02] dark:bg-white/5 flex flex-col items-center justify-center gap-2 transition-[background-color,box-shadow] duration-700 ease-swift group-hover:ring-accent/40">
+              <div className="aspect-[2/3] rounded-lg bg-chip flex flex-col items-center justify-center gap-2 hover:bg-hover">
                 <span className="text-sm text-muted group-hover:text-content">查看更多</span>
                 <svg viewBox="0 0 24 24" className="w-5 h-5 text-muted group-hover:text-accent" fill="none" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6l6 6-6 6" />
@@ -266,7 +261,6 @@ function Rail({
         </div>
       )}
       </section>
-    </Reveal>
   );
 }
 
@@ -278,8 +272,8 @@ function RailArrow({ dir, disabled, onClick }: { dir: 'left' | 'right'; disabled
       disabled={disabled}
       aria-label={dir === 'left' ? '向左滚动' : '向右滚动'}
       className={cn(
-        'inline-flex items-center justify-center w-7 h-7 rounded-full bg-black/[0.04] dark:bg-white/5 ring-1 ring-black/[0.08] dark:ring-white/10 text-muted transition-[background-color,color,box-shadow] duration-700 ease-swift',
-        disabled ? 'opacity-40 cursor-not-allowed' : 'hover:text-content hover:border-accent'
+        'inline-flex items-center justify-center w-7 h-7 rounded-full bg-chip text-muted transition-colors',
+        disabled ? 'opacity-40 cursor-not-allowed' : 'hover:text-content hover:bg-hover'
       )}
     >
       <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor">
@@ -298,9 +292,9 @@ function RailSkeleton() {
   return (
     <div className="flex gap-3 overflow-hidden">
       {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="w-[124px] sm:w-[148px] shrink-0">
-          <div className="aspect-[2/3] rounded-tile bg-chip animate-pulse" />
-          <div className="h-3 mt-2 rounded-pill bg-chip animate-pulse" />
+        <div key={i} className="w-[108px] sm:w-[124px] shrink-0">
+          <div className="aspect-[2/3] rounded-lg bg-chip animate-pulse" />
+          <div className="h-3 mt-2 rounded bg-chip animate-pulse" />
         </div>
       ))}
     </div>

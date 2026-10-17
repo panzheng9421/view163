@@ -8,6 +8,13 @@ import { SmartImage } from './smart-image';
 
 // —— 跨源同名聚合 ——
 
+/**
+ * 首选源域名（用户 2026-10-17 定：「这里就显示一个暴风就行了，暴风不能用再显示其他的」）：
+ * 聚合卡片默认只出首选源的条目——有收录 → 点击直达其详情，不展开多源选择；
+ * 首选源没收录这部片 → 保留全部条目走多源选择。
+ */
+const PRIMARY_SOURCE_DOMAIN = 'bfzyapi.com';
+
 export interface AggregatedGroup {
   key: string;
   name: string;
@@ -78,20 +85,11 @@ function hashSeed(s: string): number {
 }
 
 /**
- * 首选源域名（用户 2026-10-17 定：「这里就显示一个暴风就行了，暴风不能用再显示其他的」）：
- * 聚合卡片默认只出首选源的条目——有收录 → 点击直达其详情，不展开多源选择；
- * 首选源没收录这部片 → 保留全部条目走多源选择。
- * 按域名认源而非 env_N 下标：预置源增删/重排序后下标会漂，域名不会；
- * 首选源被用户整体删掉时自动回退为纯多源选择（优雅降级）。
- */
-const PRIMARY_SOURCE_DOMAIN = 'bfzyapi.com';
-
-/**
- * 聚合影片卡片（竖版海报卡，对齐主流影视站样式）：
+ * 聚合影片卡片（竖版海报卡，对齐主流影视站样式，用户 2026-10-17 拍板）：
  * - 海报占满卡片宽度（2:3），左上角年份、右下角评分叠加在图上；
- * - 海报下方：标题 + 类型胶囊 + 更新状态；
- * - 首选源（暴风）有收录 → 单源卡：点击直接打开该源详情（不带「N 源」徽章）；
- *   没收录 → 多源卡：显示「N 源」徽章，点击展开各源列表选源播放。
+ * - 海报下方：标题 + 演员 + 类型胶囊 + 更新状态；
+ * - 首选源（暴风）有收录 → 单源卡：点击海报区直接打开该源详情（不带「N 源」徽章）；
+ *   没收录 → 多源卡：显示「N 源」徽章，点海报区展开各源列表选源播放。
  * onOpen 第二参数传同组其他源条目：首选源详情无剧集时，详情弹窗据此提供换源兜底。
  */
 export function AggregatedCard({
@@ -110,7 +108,8 @@ export function AggregatedCard({
   const [expanded, setExpanded] = useState(false);
   const showImg = !!group.pic && !imgFailed;
 
-  // 首选源有收录 → 卡片只留它（单源直达）；没收录 → 全部条目走多源选择
+  // 首选源有收录 → 卡片只留它（单源直达）；没收录 → 全部条目走多源选择。
+  // 按域名认源而非 env_N 下标：预置源增删/重排序后下标会漂，域名不会。
   const items = useMemo(() => {
     const primary = group.items.find((i) => (i.sourceUrl || '').includes(PRIMARY_SOURCE_DOMAIN));
     return primary ? [primary] : group.items;
@@ -147,19 +146,8 @@ export function AggregatedCard({
   };
 
   return (
-    /*
-     * 双边框（外壳 3px 托盘 + 内芯），hover 整体轻抬 4px。
-     * 不用 hover:scale —— 外壳整体放大会把托盘边撑出比例，且相邻卡片互相挤压。
-     */
-    <div
-      className={cn(
-        'bezel-card group flex h-full flex-col transition-transform duration-700 ease-swift hover:-translate-y-1 active:scale-[0.98]',
-        multi && expanded && 'ring-accent/40'
-      )}
-    >
-      <div
-        className="bezel-card-core flex flex-col flex-grow"
-      >
+    <div className={cn('card flex h-full flex-col', multi && expanded && 'ring-1 ring-accent/40')}>
+      {/* 海报区才是点击热区（文字区不触发打开，避免误触——与腾讯一致） */}
       <div
         className="relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60"
         role="button"
@@ -197,72 +185,70 @@ export function AggregatedCard({
 
         {/* 左上角：年份 */}
         {group.year && (
-          <span className="absolute top-1.5 left-1.5 num text-mini font-medium text-white rounded-pill bg-black/60 px-2 py-0.5">
+          <span
+            className="absolute top-1.5 left-1.5 text-xs font-medium text-white"
+            style={{ textShadow: '0 1px 4px rgb(0 0 0 / 0.8)' }}
+          >
             {group.year}
           </span>
         )}
 
         {/* 右上角：多源数量徽章（只写数量，不出现源名） */}
         {multi && (
-          <span className="absolute top-1.5 right-1.5 num text-mini text-accent font-medium rounded-pill bg-black/60 px-2 py-0.5 ring-1 ring-accent/30">
-            {group.items.length} 源
+          <span
+            className="absolute top-1.5 right-1.5 text-xs font-medium text-accent"
+            style={{ textShadow: '0 1px 4px rgb(0 0 0 / 0.8)' }}
+          >
+            {items.length} 源
           </span>
         )}
 
         {/* 右下角：评分（统一一位小数，对齐主流影视站） */}
         <span
           className={cn(
-            'absolute bottom-1.5 right-1.5 num text-mini text-white rounded-pill bg-black/60 px-2 py-0.5',
-            scoreLabel === '暂无评分' ? 'font-normal opacity-75' : 'font-bold ring-1 ring-rating/30'
+            'absolute bottom-1.5 right-1.5 text-xs text-white',
+            scoreLabel === '暂无评分' ? 'font-normal opacity-75' : 'font-bold'
           )}
+          style={{ textShadow: '0 1px 4px rgb(0 0 0 / 0.8)' }}
         >
           {scoreLabel}
         </span>
       </div>
 
       {/* 文字区：标题 + 演员 + 类型胶囊(可选) + 更新状态 */}
-      <div className="flex flex-col flex-grow min-w-0 p-3">
-        <h3 className="font-medium tracking-[-0.01em] text-sm text-content line-clamp-2" title={group.name}>
+      <div className="flex flex-col flex-grow min-w-0 p-2.5">
+        <h3 className="font-semibold text-sm text-content mb-1 line-clamp-2" title={group.name}>
           {group.name}
         </h3>
         {/* 演员行：无演员时保留等高空行（h-4），保证网格内多卡的文字行位置对齐 */}
-        <p className="mt-0.5 text-mini text-muted truncate h-4" title={actorNames.join(' / ')}>
+        <p className="text-xs text-muted truncate h-4" title={actorNames.join(' / ')}>
           {actorNames.join(' / ')}
         </p>
         {(showType && group.typeName) || adult ? (
-          <div className="flex flex-wrap items-center gap-1 mt-1.5">
-            {showType && group.typeName && (
-              <span className="text-2xs px-2 py-0.5 rounded-pill bg-accent/10 text-accent ring-1 ring-accent/20">
-                {group.typeName}
-              </span>
-            )}
-            {adult && (
-              <span className="text-2xs px-2 py-0.5 rounded-pill bg-danger/10 text-danger ring-1 ring-danger/25">
-                (18+)
-              </span>
-            )}
+          <div className="flex flex-wrap items-center gap-1 mt-1">
+            {showType && group.typeName && <span className="tag bg-accent/15 text-accent">{group.typeName}</span>}
+            {adult && <span className="tag bg-pink-500/15 text-pink-600 dark:text-pink-400">(18+)</span>}
           </div>
         ) : null}
         {group.remarks && (
-          <p className="mt-1 text-mini text-muted line-clamp-1" title={group.remarks}>
+          <p className="mt-1 text-[11px] text-muted line-clamp-1" title={group.remarks}>
             {group.remarks}
           </p>
         )}
       </div>
 
       {multi && expanded && (
-        <div className="border-t border-black/[0.08] dark:border-white/10 p-3 animate-fade-in">
-          <p className="text-2xs text-faint mb-2">选择来源播放</p>
+        <div className="border-t border-line p-2.5 animate-fade-in">
+          <p className="text-[10px] text-faint mb-1.5">选择来源播放</p>
           <div className="flex flex-wrap gap-1.5">
-            {items.map((item, i) => (
+            {items.map((item) => (
               <button
                 key={`${item.sourceKey}_${item.vodId}`}
                 className={cn(
-                  'group inline-flex items-center gap-1.5 max-w-full rounded-tile px-2.5 py-1.5',
-                  'text-xs transition-[background-color,box-shadow,color] duration-700 ease-swift cursor-pointer',
-                  'bg-black/[0.04] dark:bg-white/5 ring-1 ring-black/[0.08] dark:ring-white/10',
-                  'hover:bg-accent/10 hover:ring-accent/40',
-                  item.isAdult && 'ring-danger/30'
+                  'group inline-flex items-center gap-1.5 max-w-full rounded-lg border px-2.5 py-1.5',
+                  'text-xs transition-all cursor-pointer',
+                  'border-line bg-chip hover:border-accent hover:bg-accent/10',
+                  item.isAdult && 'border-pink-500/30'
                 )}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -272,9 +258,8 @@ export function AggregatedCard({
               >
                 <span className="font-medium text-content truncate max-w-[9em]">{item.sourceName}</span>
                 <span className="text-faint truncate max-w-[7em]">{item.remarks || '暂无介绍'}</span>
-                {/* 斜向位移：比单纯放大更有「物理被推」的手感 */}
                 <svg
-                  className="w-3.5 h-3.5 text-accent shrink-0 transition-transform duration-700 ease-swift group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+                  className="w-3.5 h-3.5 text-accent shrink-0 transition-transform group-hover:scale-110"
                   fill="currentColor"
                   viewBox="0 0 24 24"
                   aria-hidden
@@ -286,7 +271,6 @@ export function AggregatedCard({
           </div>
         </div>
       )}
-      </div>
     </div>
   );
 }
@@ -300,7 +284,7 @@ export function VideoCard({ item, onClick }: { item: SearchResultItem; onClick: 
 
   return (
     <div
-      className="card cursor-pointer hover:-translate-y-1 h-full transition-[transform,box-shadow] duration-700 ease-swift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      className="card cursor-pointer hover:scale-[1.02] hover:shadow-md h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       role="button"
       tabIndex={0}
       onClick={onClick}
@@ -339,18 +323,13 @@ export function VideoCard({ item, onClick }: { item: SearchResultItem; onClick: 
               {item.name}
             </h3>
             <div className="flex flex-wrap gap-1 mb-1.5">
-              {item.typeName && (
-                <span className="text-2xs px-2 py-0.5 rounded-pill bg-accent/10 text-accent ring-1 ring-accent/20">
-                  {item.typeName}
-                </span>
-              )}
-              {item.year && (
-                <span className="num text-2xs px-2 py-0.5 rounded-pill bg-black/[0.04] dark:bg-white/5 text-muted ring-1 ring-black/[0.08] dark:ring-white/10">
-                  {item.year}
-                </span>
-              )}
+              {item.typeName && <span className="tag bg-accent/15 text-accent">{item.typeName}</span>}
+              {item.year && <span className="tag bg-purple-500/15 text-purple-600 dark:text-purple-300">{item.year}</span>}
             </div>
             <p className="text-xs text-muted line-clamp-2 mb-2">{item.remarks || '暂无介绍'}</p>
+          </div>
+          <div className="flex items-center justify-between mt-auto pt-1.5 border-t border-line">
+            <span className="tag bg-chip text-muted truncate max-w-[80%]">{item.sourceName}</span>
           </div>
         </div>
       </div>
@@ -367,7 +346,7 @@ export function DoubanCard({ item, onClick }: { item: { title: string; cover: st
 
   return (
     <div
-      className="bezel-card cursor-pointer hover:-translate-y-1 h-full transition-transform duration-700 ease-swift active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      className="card cursor-pointer hover:scale-[1.03] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       role="button"
       tabIndex={0}
       onClick={onClick}
@@ -379,34 +358,32 @@ export function DoubanCard({ item, onClick }: { item: { title: string; cover: st
         }
       }}
     >
-      <div className="bezel-card-core h-full flex flex-col">
-        <div className="relative aspect-[2/3] bg-chip">
-          {item.cover && !imgFailed ? (
-            <SmartImage
-              url={item.cover}
-              mode={imageProxyMode}
-              customProxy={customImageProxy}
-              alt={item.title}
-              className="w-full h-full object-cover"
-              onExhausted={() => setImgFailed(true)}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-chip">
-              <svg className="w-8 h-8 text-faint" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 4v16m10-16v16M3 6a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6zm4 0a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1h-1a1 1 0 01-1-1V6zm8 0a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1h-1a1 1 0 01-1-1V6zm4 0a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1h-1a1 1 0 01-1-1V6z" />
-              </svg>
-            </div>
-          )}
-          {item.rating && (
-            <span className="absolute top-1.5 right-1.5 num text-mini text-rating font-medium rounded-pill bg-black/60 px-2 py-0.5 ring-1 ring-rating/30">
-              ★ {item.rating}
-            </span>
-          )}
-        </div>
-        <div className="p-3">
-          <div className="text-xs font-medium text-content truncate" title={item.title}>
-            {item.title}
+      <div className="relative aspect-[2/3] bg-chip">
+        {item.cover && !imgFailed ? (
+          <SmartImage
+            url={item.cover}
+            mode={imageProxyMode}
+            customProxy={customImageProxy}
+            alt={item.title}
+            className="w-full h-full object-cover"
+            onExhausted={() => setImgFailed(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-chip">
+            <svg className="w-8 h-8 text-faint" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 4v16m10-16v16M3 6a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6zm4 0a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1h-1a1 1 0 01-1-1V6zm8 0a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1h-1a1 1 0 01-1-1V6zm4 0a1 1 0 011-1h1a1 1 0 011 1v12a1 1 0 01-1 1h-1a1 1 0 01-1-1V6z" />
+            </svg>
           </div>
+        )}
+        {item.rating && (
+          <span className={cn('absolute top-1.5 right-1.5 tag bg-black/70 text-rating font-medium')}>
+            ★ {item.rating}
+          </span>
+        )}
+      </div>
+      <div className="p-2">
+        <div className="text-xs font-medium text-content truncate" title={item.title}>
+          {item.title}
         </div>
       </div>
     </div>

@@ -70,7 +70,7 @@ export function HistoryPanel({ open, onClose }: { open: boolean; onClose: () => 
               />
               <input
                 type="text"
-                className="w-full h-9 pl-8 pr-8 rounded-input ring-1 ring-inset ring-black/[0.08] dark:ring-white/10 bg-chip text-sm text-content placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-accent/40"
+                className="w-full h-9 pl-8 pr-8 rounded-lg border border-line bg-chip text-sm text-content placeholder:text-faint focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/40"
                 placeholder="搜索观看历史..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -88,7 +88,7 @@ export function HistoryPanel({ open, onClose }: { open: boolean; onClose: () => 
               )}
             </div>
             <button
-              className="shrink-0 px-2 py-1.5 rounded-tile text-xs text-faint hover:text-danger hover:bg-hover transition-colors"
+              className="shrink-0 px-2 py-1.5 rounded-md text-xs text-faint hover:text-danger hover:bg-hover transition-colors"
               onClick={() => setConfirmClear(true)}
             >
               清空历史
@@ -191,7 +191,7 @@ function HistoryItem({ item }: { item: HistoryEntry }) {
           // 点击即同步一次时间戳，置顶最近观看
           upsertHistory({ ...item, timestamp: Date.now() }).catch(() => {});
         }}
-        className="block bg-card hover:bg-hover rounded-tile p-3 pr-10 transition-colors"
+        className="block bg-card hover:bg-hover rounded-lg p-3 pr-10 transition-colors"
       >
         <div className="flex items-center gap-3">
           {item.pic && !imgFailed ? (
@@ -200,11 +200,11 @@ function HistoryItem({ item }: { item: HistoryEntry }) {
               mode={imageProxyMode}
               customProxy={customImageProxy}
               alt=""
-              className="w-10 h-14 object-cover rounded-tile bg-chip"
+              className="w-10 h-14 object-cover rounded bg-chip"
               onExhausted={() => setImgFailed(true)}
             />
           ) : (
-            <div className="w-10 h-14 rounded-tile bg-chip flex items-center justify-center shrink-0">
+            <div className="w-10 h-14 rounded bg-chip flex items-center justify-center shrink-0">
               <svg className="w-4 h-4 text-faint" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16m10-16v16M7 8h10M7 12h10" />
               </svg>

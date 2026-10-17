@@ -147,7 +147,7 @@ export function SearchHistoryDropdown({
     <div
       className={cn(
         'absolute left-0 right-0 top-full z-40 overflow-hidden text-left',
-        'rounded-b-tile ring-1 ring-black/[0.08] dark:ring-white/10 bg-surface-raised shadow-modal animate-fade-in'
+        'rounded-b-xl border-x border-b border-accent bg-surface-raised shadow-2xl animate-fade-in'
       )}
     >
       <div className="flex items-center justify-between pl-4 pr-2 py-2 border-b border-line">

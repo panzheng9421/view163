@@ -11,26 +11,24 @@ import { Icon, type IconName } from './icon';
  */
 
 const SPINNER_SIZE = {
-  sm: 'w-4 h-4 border-[1.5px]',
-  md: 'w-8 h-8 border-[1.5px]',
-  lg: 'w-9 h-9 border-[1.5px]',
+  sm: 'w-4 h-4 border-2',
+  md: 'w-8 h-8 border-4',
+  lg: 'w-9 h-9 border-4',
 } as const;
 
 /**
- * 海报骨架屏：结构对齐真实结果卡（2:3 竖版海报 + 两行文字），
- * 扫光只动 transform，不触发重排。此前 4 处各写一份灰方块 animate-pulse，这里收敛。
+ * 海报骨架屏：结构对齐真实结果卡（2:3 竖版海报 + 两行文字）。
+ * 分类 / 榜单 / 探索三个新页面在首屏数据未就绪时使用。
  */
 export function PosterSkeleton({ count = 12 }: { count?: number }) {
   return (
-    <div className="poster-grid">
+    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 items-start">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-card bg-card ring-1 ring-black/[0.08] dark:ring-white/10 overflow-hidden">
-          <div className="relative aspect-[2/3] bg-chip overflow-hidden">
-            <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-black/[0.06] dark:via-white/[0.08] to-transparent" />
-          </div>
-          <div className="p-3 space-y-2">
-            <div className="h-3.5 w-3/4 rounded-pill bg-chip" />
-            <div className="h-3 w-1/2 rounded-pill bg-chip" />
+        <div key={i} className="rounded-lg bg-card border border-line overflow-hidden">
+          <div className="aspect-[2/3] bg-chip animate-pulse" />
+          <div className="p-2.5 space-y-2">
+            <div className="h-3.5 w-3/4 rounded bg-chip animate-pulse" />
+            <div className="h-3 w-1/2 rounded bg-chip animate-pulse" />
           </div>
         </div>
       ))}
@@ -91,12 +89,7 @@ export function EmptyState({
     return <p className={cn('text-center text-xs text-faint py-6', className)}>{title}</p>;
   }
   return (
-    <div
-      className={cn(
-        'rounded-card bg-black/[0.04] dark:bg-white/5 ring-1 ring-black/[0.08] dark:ring-white/10 p-6 text-center',
-        className
-      )}
-    >
+    <div className={cn('border border-dashed border-line rounded-lg p-6 text-center', className)}>
       <Icon name={icon} className="w-6 h-6 mx-auto text-faint mb-2" />
       <p className="text-sm text-muted">{title}</p>
       {description && <p className="text-xs text-faint mt-1 leading-relaxed">{description}</p>}

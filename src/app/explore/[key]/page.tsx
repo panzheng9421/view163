@@ -9,7 +9,6 @@ import { Header } from '@/components/header';
 import { BackToTop } from '@/components/back-to-top';
 import { SiteFooter } from '@/components/site-footer';
 import { Spinner, PosterSkeleton } from '@/components/states';
-import { Reveal } from '@/components/reveal';
 import type { DoubanItem } from '@/lib/types';
 
 /** 每次上拉加载量：24 = 1 排 6 卡的整数倍（4 整行） */
@@ -73,7 +72,7 @@ function ExploreContent() {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
-        <main className="flex-1 max-w-shell w-full mx-auto px-5 md:px-8 py-16 text-center">
+        <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 py-16 text-center">
           <p className="text-muted mb-4">分区不存在</p>
           <button className="btn-ghost text-sm" onClick={() => router.push('/')}>
             回首页
@@ -87,23 +86,20 @@ function ExploreContent() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main className="flex-1 max-w-shell w-full mx-auto px-5 md:px-8 py-6">
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 py-6">
         <div className="flex items-center gap-3 pt-6">
           <button
             type="button"
             aria-label="返回"
             onClick={() => router.back()}
-            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-black/[0.04] dark:bg-white/5 ring-1 ring-black/[0.08] dark:ring-white/10 text-muted hover:text-content hover:ring-accent/40 transition-[background-color,color,box-shadow] duration-700 ease-swift"
+            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-chip text-muted hover:text-content hover:bg-hover transition-colors"
           >
             <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 6l-6 6 6 6" />
             </svg>
           </button>
-          <p className="eyebrow w-fit">探索</p>
+          <h1 className="text-lg font-semibold text-content truncate">{conf!.title}</h1>
         </div>
-        <h1 className="mt-4 mb-6 font-display text-display-md font-semibold text-content leading-none tracking-[-0.02em]">
-          {conf!.title}
-        </h1>
 
         {query.isError ? (
           <p className="text-sm text-faint py-16 text-center">内容加载失败，可稍后重试</p>
@@ -111,8 +107,7 @@ function ExploreContent() {
           <PosterSkeleton count={18} />
         ) : (
           <>
-            <Reveal>
-              <div className="poster-grid">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 items-start mt-6">
                 {items.map((item) => (
                   <DoubanCard
                     key={item.id}
@@ -121,7 +116,6 @@ function ExploreContent() {
                   />
                 ))}
               </div>
-            </Reveal>
 
             <div ref={sentinelRef} className="h-4" aria-hidden />
 

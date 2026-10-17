@@ -9,7 +9,6 @@ import { AggregatedCard, aggregateResults } from '@/components/video-card';
 import { DetailModal } from '@/components/detail-modal';
 import { SiteFooter } from '@/components/site-footer';
 import { EmptyState, LoadingState, ErrorState, Spinner } from '@/components/states';
-import { Reveal } from '@/components/reveal';
 import { useAppStore, resolveSource, isInDisabledSubscription, rankSourcesByHealth } from '@/lib/store';
 import { api, fetchStatusWithRetry, STATUS_QUERY_KEY } from '@/lib/client-api';
 import type { SearchResultItem, CategoryKey, CategorySort, CategoryResponse, SourceConfig } from '@/lib/types';
@@ -216,7 +215,7 @@ function CategoryContent() {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
-        <main className="flex-1 max-w-shell mx-auto px-5 md:px-8 py-10">
+        <main className="flex-1 max-w-[1440px] mx-auto px-4 py-10">
           <EmptyState title="找不到该分类" description="请从顶部分类导航进入" />
         </main>
         <SiteFooter />
@@ -228,18 +227,9 @@ function CategoryContent() {
     <div className="min-h-screen flex flex-col">
       <Header />
 
-      <main className="flex-1 max-w-shell w-full mx-auto px-5 md:px-8 py-6">
-        {/* 分类页标题区：此前直接进筛选条，用户看不到「当前在哪个分类」 */}
-        <header className="pt-6 pb-4">
-          <p className="eyebrow w-fit mb-3">分类浏览</p>
-          <h1 className="font-display text-display-md font-semibold text-content leading-none tracking-[-0.02em]">
-            {cat}
-          </h1>
-          <p className="mt-3 text-sm text-muted">按类型浏览全部{cat}，可按地区、更新时间与评分筛选</p>
-        </header>
-
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 py-6">
         {!source && (
-          <div className="my-4 rounded-tile ring-1 ring-black/[0.08] dark:ring-white/10 bg-chip px-4 py-3 text-sm text-muted">
+          <div className="my-4 rounded-lg border border-line bg-chip px-4 py-3 text-sm text-muted">
             {statusQuery.isLoading
               ? '正在准备片源…'
               : '暂时没有可用的片源，请到「设置」里添加或勾选一个源。'}
@@ -254,10 +244,10 @@ function CategoryContent() {
                 key={s.name}
                 onClick={() => switchSub(s.name)}
                 className={cn(
-                  'px-3 py-1.5 rounded-pill text-sm ring-1 ring-black/[0.08] dark:ring-white/10 transition-[background-color,box-shadow,color] duration-700 ease-swift',
+                  'px-3 py-1.5 rounded-full text-sm transition-colors',
                   currentSub?.name === s.name
-                    ? 'ring-accent/50 bg-accent/15 text-accent'
-                    : 'bg-black/[0.02] dark:bg-white/5 text-muted hover:text-content hover:ring-accent/40'
+                    ? 'bg-accent text-on-accent'
+                    : 'bg-chip text-muted hover:text-content hover:bg-hover'
                 )}
               >
                 {s.name}
@@ -332,13 +322,11 @@ function CategoryContent() {
                 </span>
               )}
             </div>
-            <Reveal>
-              <div className="poster-grid">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 items-start">
                 {groups.map((g) => (
                   <AggregatedCard key={g.key} group={g} onOpen={setDetailItem} showType={false} />
                 ))}
               </div>
-            </Reveal>
 
             {/* 上拉加载：哨兵自动续页 + 按钮兜底 */}
             <div ref={sentinelRef} className="h-4" aria-hidden />

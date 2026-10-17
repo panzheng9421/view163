@@ -135,7 +135,7 @@ export function DetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/70 backdrop-blur-sm py-10 px-4 animate-fade-in"
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/80 py-10 px-4 animate-fade-in"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -143,7 +143,7 @@ export function DetailModal({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="bg-surface-raised rounded-shell w-full max-w-3xl shadow-modal ring-1 ring-black/[0.06] dark:ring-white/10 animate-slide-up outline-none"
+        className="bg-surface-raised rounded-xl w-full max-w-3xl shadow-2xl animate-slide-up outline-none"
         role="dialog"
         aria-modal="true"
         aria-label={`${item.name} 详情`}
