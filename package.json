@@ -18,12 +18,14 @@
     "artplayer": "^5.2.3",
     "dexie": "^4.0.8",
     "dexie-react-hooks": "^1.1.7",
+    "geist": "^1.8.1",
     "hls.js": "^1.5.17",
     "mpegts.js": "^1.8.2",
     "mux.js": "^6.3.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "undici": "^6.29.1",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

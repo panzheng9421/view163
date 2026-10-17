@@ -18,7 +18,9 @@ import { detectSavingCapability, pickSaveTarget } from '@/lib/download-saver';
  * - 入口：header 下载图标 + 播放页「下载本集」（均派发 window 事件）；
  * - 并发：全局最多同时进行 3 个任务，其余排队（waiting）；
  * - 断点：已下载分片写入 Cache Storage（网络层断点）；
- *   保存目标（FS Access / 内存）活不过页面刷新，恢复时由用户点击「继续」重新选择。
+ * - 刷新恢复：运行句柄活不过刷新，挂载时把僵死 'downloading' 退回 'waiting'
+ *   交给调度器自动续传；保存目标失效时以「只下载」模式先把分片传完，
+ *   完成后置 'paused'，用户点「继续」重选位置即可写出（手势内弹选择器）。
  */
 
 const MAX_CONCURRENT_DOWNLOADS = 3;
@@ -68,10 +70,17 @@ export function DownloadManager({ isOpen, onClose }: { isOpen: boolean; onClose:
         void updateEntry(entry.id, {
           finished: p.current,
           total: p.total,
-          status: p.status === 'done' ? 'completed' : p.status === 'error' ? 'error' : 'downloading',
+          // 只下载模式下 'done' 不落 completed（随后由 then 置 paused），避免状态闪烁
+          status:
+            p.status === 'done'
+              ? hasTarget
+                ? 'completed'
+                : 'downloading'
+              : p.status === 'error'
+                ? 'error'
+                : 'downloading',
         });
       };
-
       const job = runDownloadJob({
         taskId: entry.id,
         url: entry.url,
@@ -84,19 +93,24 @@ export function DownloadManager({ isOpen, onClose }: { isOpen: boolean; onClose:
         target: (globalThis as unknown as { __dlSaveTarget?: { id: string; target: import('@/lib/download-saver').SaveTarget } }).__dlSaveTarget?.id === entry.id
           ? (globalThis as unknown as { __dlSaveTarget: { target: import('@/lib/download-saver').SaveTarget } }).__dlSaveTarget.target
           : {
-              // 目标已失效（页面刷新后句柄消亡）：显式报错引导用户点「继续」重选，
-              // 绝不能静默空写——否则任务会显示完成却产出空文件
+              // 目标已失效（页面刷新后句柄消亡）：走「只下载」模式把分片续传完，
+              // 写出阶段不存在故不会空写；分片就绪后置 paused 引导用户点「继续」重选
               kind: 'memory',
-              write: async () => {
-                throw new Error('保存位置已失效，请点击「继续」重新选择');
-              },
+              write: async () => {},
               close: async () => {},
               abort: async () => {},
             },
+        downloadOnly: !hasTarget,
       });
 
       void job
         .then(async () => {
+          if (!hasTarget) {
+            // 只下载模式完成：分片已就绪，等用户重选保存位置后写出
+            await updateEntry(entry.id, { status: 'paused' });
+            toast(`《${entry.title}》分片已续传完成，点「继续」选择保存位置`, 'info');
+            return;
+          }
           await updateEntry(entry.id, { status: 'completed' });
           void clearDownloadChunks(entry.id);
           toast(`《${entry.title}》下载完成`, 'success');
@@ -189,6 +203,24 @@ export function DownloadManager({ isOpen, onClose }: { isOpen: boolean; onClose:
     scheduleNext();
   }, [isOpen, refresh, scheduleNext]);
 
+  // 刷新自愈：运行句柄（AbortController/暂停控制器）活不过页面刷新，
+  // db 里僵死的 'downloading' 没有 worker 接管、进度永远冻结。
+  // 挂载即把它们退回 'waiting' 交给调度器——分片缓存断点生效，自动续传。
+  // 注意：status 无索引（schema 仅 id, createdAt），不能 where('status')，全表过滤。
+  useEffect(() => {
+    void (async () => {
+      const all = await db.downloads.toArray();
+      const stale = all.filter((t) => t.status === 'downloading');
+      if (stale.length === 0) return;
+      await Promise.all(
+        stale.map((t) => db.downloads.update(t.id, { status: 'waiting', updatedAt: Date.now() }))
+      );
+      refresh();
+      scheduleNext();
+      toast(`已恢复 ${stale.length} 个下载任务，分片断点续传中`, 'info');
+    })();
+  }, [refresh, scheduleNext, toast]);
+
   const onPauseResume = async (entry: DownloadTaskEntry) => {
     const handle = running.current.get(entry.id);
     if (handle && entry.status === 'downloading') {
@@ -257,7 +289,9 @@ export function DownloadManager({ isOpen, onClose }: { isOpen: boolean; onClose:
                 <p className="text-sm text-content truncate">{t.title}</p>
                 <p className="text-xs text-faint">
                   {t.format.toUpperCase()} · {statusLabel[t.status]}
-                  {t.status === 'downloading' && t.total > 0 ? ` · ${t.finished}/${t.total} 分片` : ''}
+                  {(t.status === 'downloading' || t.status === 'paused') && t.total > 0
+                    ? ` · ${t.finished}/${t.total} 分片`
+                    : ''}
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">

@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import type { SourceConfig, LiveSourceConfig, SourceSearchOutcome } from './types';
+import type { SourceConfig, LiveSourceConfig, SourceHealthHint, SourceSearchOutcome } from './types';
 import { clearLiveProbeResultsDb, loadLiveProbeResults, saveLiveProbeResults } from './db';
 import { PERSIST_KEY, createThrottledStorage } from './persist-storage';
 
@@ -136,28 +136,11 @@ export function keyBelongsToSubscription(key: string, prefix: string): boolean {
   return key === prefix || key.startsWith(`${prefix}_`);
 }
 
-/** 点播源自动停用阈值：连续失败/超时达到该次数即暂停该源参与搜索 */
-export const SOURCE_DISABLE_THRESHOLD = 2;
 /**
- * 自动停用阶梯（毫秒），按「第几次被自动停用」逐级加重：
- * 固定时长的问题是，彻底挂掉的源会每隔 30 分钟被重新试一次、每次都要白等一轮超时；
- * 而偶发的网络抖动又不该被长期惩罚，所以第 1 级保持得很轻。
- * 下标 i 对应第 i+1 次停用；超出数组长度则进入长期停用（permanent）。
+ * 点播源健康度条目（按 sourceKey），随搜索结果滚动更新。
+ * 只用于界面展示「上次结果 / 连续失败次数」——不参与任何自动停用判定，
+ * 源失败也不会被踢出搜索（避免用户莫名搜不到东西，也免去「恢复」这种无意义操作）。
  */
-export const SOURCE_DISABLE_LADDER = [30 * 60 * 1000, 24 * 60 * 60 * 1000];
-
-/** 一次「源被自动停用」的事件，供调用方按级别提示 */
-export interface SourceDisableEvent {
-  key: string;
-  /** 本次是第几次被自动停用（从 1 起） */
-  level: number;
-  /** 是否已进入长期停用（阶梯用尽，需手动恢复） */
-  permanent: boolean;
-  /** 本次停用时长（毫秒）；长期停用时为 undefined */
-  ttlMs?: number;
-}
-
-/** 点播源健康度条目（按 sourceKey），随搜索结果滚动更新 */
 export interface SourceHealthEntry {
   ok: boolean;
   ms?: number;
@@ -165,12 +148,6 @@ export interface SourceHealthEntry {
   timedOut?: boolean;
   /** 连续失败/超时次数；成功时归零 */
   failStreak: number;
-  /** 命中阈值后的停用截止时间（epoch ms）；恢复成功后清除 */
-  disabledUntil?: number;
-  /** 累计的自动停用等级（决定惩罚时长）；每成功一次降一级 */
-  disableCount?: number;
-  /** 阶梯用尽后的长期停用：不设到期时间，只能由用户手动恢复 */
-  permanent?: boolean;
   timestamp: number;
 }
 
@@ -241,16 +218,10 @@ interface AppState extends AppSettings {
   setLiveProbeResults: (entries: Record<string, LiveProbeEntry>) => void;
   clearLiveProbeResults: () => void;
   /**
-   * 记录一次搜索的逐源健康度；连续失败/超时达到阈值即暂停该源参与搜索。
-   * 停用时长按阶梯逐级加重（30 分钟 → 24 小时 → 长期停用），且每成功一次降一级：
-   * 偶发抽风的源会自行回落，从未成功过的死源才会升到长期停用。
-   * 不直接改 selectedKeys（用户勾选意图保留，且避免变更引用触发搜索重发），
-   * 参与搜索与否由调用方经 isSourceDisabled 过滤。
-   * 返回本次「新进入停用」的事件列表（供调用方按级别 toast 提示）。
+   * 记录一次搜索的逐源健康度，仅用于界面展示（耗时 / 连续失败次数）。
+   * 不做自动停用：源失败后下次搜索仍然照常参与，用户无需手动「恢复」。
    */
-  recordSourceHealth: (outcomes: SourceSearchOutcome[]) => SourceDisableEvent[];
-  /** 清除单个源的健康度记录（手动恢复入口） */
-  clearSourceHealth: (key: string) => void;
+  recordSourceHealth: (outcomes: SourceSearchOutcome[]) => void;
   markEnvSubsSeen: (urls: string[]) => void;
   updateSettings: (patch: Partial<Omit<AppSettings, 'customAPIs' | 'selectedKeys'>>) => void;
 }
@@ -642,64 +613,25 @@ export const useAppStore = create<AppState>()(
       },
 
       recordSourceHealth: (outcomes) => {
-        if (outcomes.length === 0) return [];
+        if (outcomes.length === 0) return;
         const now = Date.now();
         const health: Record<string, SourceHealthEntry> = {};
-        // 顺带清理陈旧条目：超过 7 天没再参与过搜索的源，其惩罚等级一并作废
+        // 顺带清理陈旧条目：超过 7 天没再参与过搜索的源，其健康度记录一并作废
         for (const [key, e] of Object.entries(get().sourceHealth)) {
           if (now - e.timestamp < 7 * 24 * 60 * 60 * 1000) health[key] = e;
         }
-        const events: SourceDisableEvent[] = [];
         for (const o of outcomes) {
           const prev = health[o.sourceKey];
-          // 停用期已过 → 上一次的连续失败已被「停用 + 恢复」打断，重新从 1 开始累计
-          const interrupted = !!prev?.disabledUntil && prev.disabledUntil <= now;
-          const failStreak = o.ok ? 0 : interrupted ? 1 : (prev?.failStreak ?? 0) + 1;
-          // 成功一次即降一级（而非清零）：偶发抽风的源会自己降回来，
-          // 从未成功过的死源才会一路升到长期停用
-          const disableCount = o.ok
-            ? Math.max(0, (prev?.disableCount ?? 0) - 1)
-            : (prev?.disableCount ?? 0);
-          // entry 覆盖旧记录：成功时停用标记随之消失（立即恢复）
-          const entry: SourceHealthEntry = {
+          health[o.sourceKey] = {
             ok: o.ok,
             ms: o.ms,
             error: o.error,
             timedOut: o.timedOut,
-            failStreak,
-            disableCount,
+            failStreak: o.ok ? 0 : (prev?.failStreak ?? 0) + 1,
             timestamp: now,
           };
-          if (!o.ok && failStreak >= SOURCE_DISABLE_THRESHOLD) {
-            const alreadyDisabled = prev?.permanent === true || (prev?.disabledUntil ?? 0) > now;
-            if (alreadyDisabled) {
-              // 已在停用期内（正常不会参与搜索，此处仅作防御）：保持原等级与截止时间
-              entry.disableCount = prev?.disableCount ?? disableCount;
-              entry.disabledUntil = prev?.disabledUntil;
-              entry.permanent = prev?.permanent;
-            } else {
-              // 第 N 次被停用 → 取阶梯第 N 级；阶梯用尽则进入长期停用
-              const nextLevel = disableCount + 1;
-              const ttlMs: number | undefined = SOURCE_DISABLE_LADDER[nextLevel - 1];
-              entry.disableCount = nextLevel;
-              if (ttlMs === undefined) {
-                entry.permanent = true;
-              } else {
-                entry.disabledUntil = now + ttlMs;
-              }
-              events.push({ key: o.sourceKey, level: nextLevel, permanent: ttlMs === undefined, ttlMs });
-            }
-          }
-          health[o.sourceKey] = entry;
         }
         set({ sourceHealth: health });
-        return events;
-      },
-
-      clearSourceHealth: (key) => {
-        const next = { ...get().sourceHealth };
-        delete next[key];
-        set({ sourceHealth: next });
       },
 
       markEnvSubsSeen: (urls) => {
@@ -843,24 +775,8 @@ export function resolveSource(
 }
 
 /**
- * 源当前是否处于自动停用期（连续超时/失败触发）。
- * 临时停用到期后此判断自然翻转为 false，即「到期自动恢复参与搜索」的懒实现；
- * 长期停用（阶梯用尽）没有到期时间，只有手动恢复（clearSourceHealth）才能解除。
- */
-export function isSourceDisabled(
-  state: Pick<AppState, 'sourceHealth'>,
-  key: string,
-  now = Date.now()
-): boolean {
-  const e = state.sourceHealth[key];
-  if (!e) return false;
-  return e.permanent === true || (!!e.disabledUntil && e.disabledUntil > now);
-}
-
-/**
  * 源是否来自一个被用户整体停用的订阅。
- * 与 isSourceDisabled 分开判断：一个是用户主动关的、一个是系统按连续失败关的，
- * 提示文案与恢复方式都不同，混在一起用户就看不懂源为什么不生效了。
+ * 这是「源不参与搜索」的唯一原因：健康度只做展示，任何源都不会因为失败被自动踢出搜索。
  */
 export function isInDisabledSubscription(
   state: Pick<AppState, 'subscriptions'>,
@@ -869,4 +785,44 @@ export function isInDisabledSubscription(
   return state.subscriptions.some(
     (s) => s.enabled === false && keyBelongsToSubscription(key, subKeyPrefix(s.url))
   );
+}
+
+/**
+ * 按健康度对点播源排序：成功源前置（提权）、连续失败源后置（降权），
+ * 但所有源都保留在列表里、一律不踢出搜索（避免「抖动一次就被判死」）。
+ * - 无记录：中性，排在中部；
+ * - 成功：提权，响应越快的越靠前；
+ * - 失败：降权，连续失败次数越多越靠后。
+ * 返回新数组，不修改入参。
+ */
+export function rankSourcesByHealth<T extends { key: string }>(
+  sources: T[],
+  health: Record<string, SourceHealthEntry>
+): T[] {
+  const rank = (key: string): { bucket: number; sub: number } => {
+    const e = health[key];
+    if (!e) return { bucket: 0, sub: 0 };
+    return e.ok
+      ? { bucket: 1, sub: -(e.ms ?? 0) } // 成功：提权，耗时越短越靠前
+      : { bucket: -1, sub: -e.failStreak }; // 失败：降权，连击越多越靠后
+  };
+  return [...sources].sort((a, b) => {
+    const ra = rank(a.key);
+    const rb = rank(b.key);
+    return rb.bucket - ra.bucket || rb.sub - ra.sub;
+  });
+}
+
+/**
+ * 把 store 里的健康度记录压成传给后端的摘要（只留成败 / 连击 / 耗时）。
+ * 后端据此在最终排序里做提权降权；未记录的源不传，后端按 0 处理。
+ */
+export function toHealthHints(
+  health: Record<string, SourceHealthEntry>
+): Record<string, SourceHealthHint> {
+  const hints: Record<string, SourceHealthHint> = {};
+  for (const [key, e] of Object.entries(health)) {
+    hints[key] = { ok: e.ok, failStreak: e.failStreak, ms: e.ms };
+  }
+  return hints;
 }

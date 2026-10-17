@@ -1,6 +1,6 @@
 'use client';
 
-import type { SearchResponse, SearchStreamEvent, SourceSearchOutcome, VideoDetail, DoubanResponse, BangumiCalendarResponse, AuthStatusResponse, SourceConfig, SearchResultItem, LivePlaylistResponse, LiveEpgResponse, SourceListPayload } from './types';
+import type { SearchResponse, SearchStreamEvent, SourceHealthHint, SourceSearchOutcome, VideoDetail, DoubanResponse, BangumiCalendarResponse, AuthStatusResponse, SourceConfig, SearchResultItem, LivePlaylistResponse, LiveEpgResponse, SourceListPayload, CategoryResponse, CategorySort } from './types';
 
 /**
  * 客户端 API 封装。401 时触发全局事件打开登录框，
@@ -85,10 +85,21 @@ async function consumeNdjson<T>(res: Response, onEvent: (event: T) => void): Pro
   consume(buffer);
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+/**
+ * 通用 JSON 请求。
+ *
+ * 默认 20s 超时（调用方传了 signal 时与之合并）：
+ * dev 编译中 / 服务重启 / 代理挂起时，无超时的 fetch 会无限挂起，
+ * 导致 statusQuery 永远 isLoading，分类页卡死在「正在准备片源…」。
+ * 注意：仅用于一次性 JSON 接口；流式（/api/search?stream=1）不走这里。
+ */
+async function request<T>(url: string, init?: RequestInit, timeoutMs = 20_000): Promise<T> {
   let res: Response;
+  const signal = init?.signal
+    ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)])
+    : AbortSignal.timeout(timeoutMs);
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...init, signal });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err;
     throw new ApiError('网络请求失败，请检查网络连接', 0);
@@ -103,6 +114,32 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     throw new ApiError(msg, res.status);
   }
   return (await res.json()) as T;
+}
+
+/**
+ * 拉取 /api/status，带手写退避重试。
+ *
+ * 为什么必须重试：dev 首次编译、服务刚重启、代理刚启动这类瞬时失败很常见，
+ * 而这一拉的失败代价极大——预置源（envSources）只由本接口下发、不落 localStorage，
+ * 一次失败就会让整场会话「一个源都没有」，首页搜索与顶栏分类入口全部空掉。
+ *
+ * 为什么重试写在 queryFn 内部而不是用 React Query 的 retry：
+ * 多个 observer 共享同一 query key（Providers / AuthProvider / 分类页）时，
+ * 框架层的 retry 实测会被吞掉（掐断头两次请求后就不再重试，直接进 error 态）。
+ */
+export async function fetchStatusWithRetry(attempts = 5): Promise<AuthStatusResponse> {
+  let lastErr: unknown = null;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await request<AuthStatusResponse>('/api/status');
+    } catch (err) {
+      // 主动取消（切页/卸载）不重试，直接冒泡
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      lastErr = err;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(800 * 2 ** i, 4000)));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new ApiError('状态接口不可用', 0);
 }
 
 export const api = {
@@ -126,19 +163,25 @@ export const api = {
     wd: string,
     sources: SourceConfig[],
     filterAdult: boolean,
-    opts?: { signal?: AbortSignal; onSource?: (outcome: SourceSearchOutcome) => void }
+    opts?: {
+      signal?: AbortSignal;
+      onSource?: (outcome: SourceSearchOutcome) => void;
+      /** 各源健康度摘要（按 sourceKey）：成功提权、连败降权，仅影响排序，不踢出任何源 */
+      health?: Record<string, SourceHealthHint>;
+    }
   ): Promise<SearchResponse> => {
     const signal = opts?.signal;
     const onSource = opts?.onSource;
+    const health = opts?.health;
     if (!onSource) {
       return request<SearchResponse>('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wd, sources, filterAdult }),
+        body: JSON.stringify({ wd, sources, filterAdult, health }),
         signal,
       });
     }
-    return searchStream(wd, sources, filterAdult, onSource, signal);
+    return searchStream(wd, sources, filterAdult, onSource, signal, health);
   },
 
   detail: (id: string, source: SourceConfig, signal?: AbortSignal) => {
@@ -155,10 +198,31 @@ export const api = {
   bangumiCalendar: (signal?: AbortSignal) => request<BangumiCalendarResponse>('/api/bangumi/calendar', { signal }),
 
   /** 影视热榜（60s API 免 key）：豆瓣周榜五个类目 + 百度热播剧 */
-  hotList: (id: string, signal?: AbortSignal) => {
+  hotList: (id: string, signal?: AbortSignal, page?: { start: number; count: number }) => {
     const sp = new URLSearchParams({ id });
+    if (page) {
+      sp.set('start', String(page.start));
+      sp.set('count', String(page.count));
+    }
     return request<DoubanResponse>(`/api/hot-list?${sp.toString()}`, { signal });
   },
+
+  /** 分类浏览（单源 t= 拉片单，支持分页 + 地区过滤 + 排序）：顶栏一级分类入口使用 */
+  category: (
+    source: SourceConfig,
+    t: number,
+    pg: number,
+    sort: CategorySort = 'new',
+    area = 'all',
+    filterAdult = true,
+    signal?: AbortSignal
+  ) =>
+    request<CategoryResponse>('/api/category', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, t, pg, sort, area, filterAdult }),
+      signal,
+    }),
 
   /** 换源：按标题跨源搜索并取详情，附带接口耗时（测速）；支持 signal 以便关闭弹窗时中止在途请求 */
   detailSpeed: async (id: string, source: SourceConfig, signal?: AbortSignal) => {
@@ -276,12 +340,13 @@ async function searchStream(
   sources: SourceConfig[],
   filterAdult: boolean,
   onSource: (outcome: SourceSearchOutcome) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  health?: Record<string, SourceHealthHint>
 ): Promise<SearchResponse> {
   const res = await fetch('/api/search?stream=1', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ wd, sources, filterAdult }),
+    body: JSON.stringify({ wd, sources, filterAdult, health }),
     signal,
   });
     throwForAuthStatus(res);

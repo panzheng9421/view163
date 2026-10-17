@@ -121,7 +121,7 @@ export function Dropdown({
           aria-label={ariaLabel}
           className={cn(
             'absolute right-0 top-full z-50 mt-1.5 min-w-full w-max max-h-60 overflow-y-auto py-1',
-            'rounded-xl border border-line bg-surface-raised shadow-xl animate-fade-in'
+            'rounded-tile ring-1 ring-black/[0.08] dark:ring-white/10 bg-surface-raised shadow-glass animate-fade-in'
           )}
         >
           {options.map((o, i) => {

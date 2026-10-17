@@ -1,4 +1,4 @@
-import type { SearchResultItem, VideoDetail } from './types';
+import type { SearchResultItem, SourceHealthHint, VideoDetail } from './types';
 
 /**
  * Apple CMS（苹果CMS）资源站响应解析
@@ -40,10 +40,24 @@ export function parseSearchList(
       year: typeof vod.vod_year === 'string' ? vod.vod_year : undefined,
       area: typeof vod.vod_area === 'string' ? vod.vod_area : undefined,
       remarks: typeof vod.vod_remarks === 'string' ? vod.vod_remarks : undefined,
+      actor: typeof vod.vod_actor === 'string' ? vod.vod_actor : undefined,
+      director: typeof vod.vod_director === 'string' ? vod.vod_director : undefined,
       sourceUrl: source.url,
       isAdult: source.isAdult,
+      hits: num(vod.vod_hits),
+      score: num(vod.vod_score),
     };
   });
+}
+
+/** 宽松取数：源站有的把数字写成字符串，取不到返回 undefined（不当作 0） */
+function num(v: unknown): number | undefined {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+  if (typeof v === 'string' && v.trim()) {
+    const n = Number(v.trim());
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -205,4 +219,72 @@ export function isRelevant(name: string, wd: string): boolean {
 export function filterRelevantResults<T extends { name?: string }>(items: T[], wd: string): T[] {
   const filtered = items.filter((item) => isRelevant(item.name || '', wd));
   return filtered.length > 0 ? filtered : items;
+}
+
+/** 优质版本标记：正片高清/完整资源，排序加分 */
+const QUALITY_GOOD = /HD|高清|蓝光|BD|1080|4K|完结|已完结|全集|正片|中字/i;
+/** 劣质版本标记：枪版/抢先/解说/预告等非正片，排序重扣（不删除，只沉底） */
+const QUALITY_BAD = /TC|枪版|偷拍|抢版|抢先|路透|预告|解说|花絮|片段/i;
+
+/**
+ * 搜索结果相关度打分（2026-10-17 加，替代「精确同名排最前」的裸排序）。
+ *
+ * 背景：源站同一部片常有多个条目——如 2026 年《希望》同时存在
+ * 「希望 / 更新至TC超清版」（枪版，与关键词完全同名）和「希望2026 / 更新至HD」（高清版，名字带年份）。
+ * 旧排序只按「归一化后完全同名 → 名字 localeCompare」，枪版靠同名永远压着高清版，
+ * 高清版反而因名字多个「2026」被甩到几十位开外。
+ *
+ * 打分：名称匹配度（同名 100 / 开头 80 / 包含 30）为主，
+ * 版本质量（HD·完结 +25；TC·枪版·预告·解说 -80）决胜，
+ * 年份新鲜度弱加权（2015 年后每年 +1，封顶 +10，避免老经典被新短剧反超）。
+ * 同分保持旧语义：名字 localeCompare → 源名。
+ */
+export function scoreSearchResult(
+  item: { name?: string; remarks?: string; year?: string | number },
+  wd: string
+): number {
+  const nName = normalizeTitle(item.name || '');
+  const nWd = normalizeTitle(wd);
+  let score = 0;
+  if (nName && nWd) {
+    if (nName === nWd) score += 100;
+    else if (nName.startsWith(nWd)) score += 80;
+    else if (nName.includes(nWd)) score += 30;
+  }
+  const badge = `${item.name || ''} ${item.remarks || ''}`;
+  if (QUALITY_BAD.test(badge)) score -= 80;
+  else if (QUALITY_GOOD.test(badge)) score += 25;
+  const year = Number(item.year);
+  if (Number.isFinite(year) && year > 2015) score += Math.min(10, year - 2015);
+  return score;
+}
+
+/** 上次成功的源在最终排序里的提权加分 */
+const HEALTH_BONUS_OK = 8;
+/** 每次连续失败的扣分：单次抖动只掉一小截，不至于被沉底 */
+const HEALTH_PENALTY_PER_FAIL = 6;
+/**
+ * 健康度扣分上限。
+ * 必须显著小于「同名 100 / 开头 80 / 包含 30」之间的档差（最小 50 分），
+ * 否则一个坏源的「包含」结果会越过好源的「同名」结果，搜「甄嬛传」反而先出一堆不相干的。
+ */
+const HEALTH_PENALTY_CAP = 30;
+
+/**
+ * 源健康度 → 最终排序加权值（加在 scoreSearchResult 之上）。
+ *
+ * 为什么需要这一层：源列表顺序传到后端后，聚合排序会按相关度打分整体重排，
+ * 同分时又按「标题 → 源名」兜底，rankSourcesByHealth 排出来的源顺序会被完全覆盖，
+ * 光靠调整 sources 数组顺序起不到任何作用。要让降权/提权真的生效，必须折算进打分本身。
+ *
+ * - 上次成功 → 提权加分；
+ * - 连续失败 → 按连击扣分，封顶；
+ * - 无记录 → 0，不偏不倚。
+ * 注意：这里只影响先后，绝不删除任何结果，源再差也照常参与搜索。
+ */
+export function healthWeight(hint?: SourceHealthHint): number {
+  if (!hint) return 0;
+  if (hint.ok) return HEALTH_BONUS_OK;
+  const streak = Number.isFinite(hint.failStreak) ? Math.max(0, Number(hint.failStreak)) : 0;
+  return -Math.min(HEALTH_PENALTY_CAP, streak * HEALTH_PENALTY_PER_FAIL);
 }

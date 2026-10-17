@@ -184,9 +184,9 @@ function WatchContent() {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center max-w-md">
-          <h1 className="text-content font-medium mb-2">点播源不存在</h1>
+          <h1 className="text-content font-medium mb-2">视频暂不可播放</h1>
           <p className="text-sm text-muted mb-4">
-            该视频来自点播源「{sourceKey}」，但它可能已被删除。请在设置中重新添加后重试。
+            该视频所属的资源已不存在（可能已被删除或地址变更）。请返回首页重新搜索，或在设置中重新添加点播源后重试。
           </p>
           <Link href="/" className="btn-primary">返回首页</Link>
         </div>
@@ -202,10 +202,11 @@ function WatchContent() {
           <HomeButton />
           <div className="min-w-0">
             <h1 className="text-sm font-medium text-content truncate">{videoTitle}</h1>
-            <p className="text-xs text-faint">
-              {source.name}
-              {episodes.length > 0 && ` · 第 ${currentIndex + 1}/${episodes.length} 集`}
-            </p>
+            {episodes.length > 0 && (
+              <p className="text-xs text-faint">
+                第 {currentIndex + 1}/{episodes.length} 集
+              </p>
+            )}
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -231,10 +232,10 @@ function WatchContent() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-4">
+      <main className="flex-1 max-w-shell w-full mx-auto px-5 md:px-8 py-4">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
           <div>
-            <div className="aspect-video bg-black rounded-lg overflow-hidden">
+            <div className="aspect-video bg-black rounded-tile overflow-hidden ring-1 ring-white/10">
               {currentUrl ? (
                 <PlayerShell
                   url={currentUrl}
@@ -281,7 +282,7 @@ function WatchContent() {
               <label className="flex items-center gap-1.5 text-xs text-muted ml-auto cursor-pointer">
                 <input
                   type="checkbox"
-                  className="h-3.5 w-3.5 accent-[#2563eb]"
+                  className="h-3.5 w-3.5 accent-accent"
                   checked={store.autoplayNext}
                   onChange={(e) => store.updateSettings({ autoplayNext: e.target.checked })}
                 />
@@ -291,7 +292,7 @@ function WatchContent() {
           </div>
 
           {/* 剧集侧栏 */}
-          <aside className="bg-surface-raised rounded-lg p-3 h-fit">
+          <aside className="bg-surface-raised rounded-tile p-3 h-fit ring-1 ring-black/[0.08] dark:ring-white/10">
             <div className="flex items-center justify-between gap-2 mb-2.5">
               <h2 className="text-sm font-semibold text-content">
                 剧集列表{episodes.length > 0 && `（${episodes.length}）`}
@@ -330,7 +331,7 @@ function WatchContent() {
                 ))}
               </div>
             )}
-            <p className="hidden md:block text-[10px] text-faint mt-3 leading-relaxed">
+            <p className="hidden md:block text-2xs text-faint mt-3 leading-relaxed">
               快捷键：空格 播放/暂停 · ←/→ 快退/快进 5s · ↑/↓ 音量 · F 全屏 · Alt+←/→ 切换集数
             </p>
           </aside>
@@ -361,7 +362,12 @@ function EpisodeButton({ index, active, onClick }: { index: number; active: bool
   return (
     <button
       ref={ref}
-      className={cn('btn btn-sm !px-1', active ? 'episode-active' : 'btn-ghost')}
+      className={cn(
+        'w-full py-1.5 rounded-tile text-sm transition-[background-color,color] duration-700 ease-swift num',
+        active
+          ? 'episode-active'
+          : 'bg-black/[0.04] dark:bg-white/5 text-muted hover:text-content hover:bg-black/[0.08] dark:bg-white/10'
+      )}
       onClick={onClick}
     >
       {index + 1}
@@ -373,7 +379,7 @@ function BackButton() {
   const router = useRouter();
   return (
     <button
-      className="p-2 -ml-2 rounded-md text-muted hover:text-content hover:bg-hover transition-colors"
+      className="p-2 -ml-2 rounded-tile text-muted hover:text-content hover:bg-hover transition-colors"
       onClick={() => {
         if (window.history.length > 1) router.back();
         else router.push('/');
@@ -392,7 +398,7 @@ function HomeButton() {
   return (
     <Link
       href="/"
-      className="p-2 rounded-md text-muted hover:text-content hover:bg-hover transition-colors"
+      className="p-2 rounded-tile text-muted hover:text-content hover:bg-hover transition-colors"
       aria-label="回首页"
       title="回首页"
     >

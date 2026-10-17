@@ -19,7 +19,7 @@ export const MAX_PUBLISH_BYTES = 256 * 1024;
 /** 单个粘贴板的等待上限，避免某个服务卡住把整次发布拖死 */
 const TIMEOUT_MS = 15_000;
 
-const USER_AGENT = 'LibreTV/2.11 (+https://github.com/LibreSpark/LibreTV)';
+const USER_AGENT = 'view163/2.11';
 
 interface Publisher {
   name: string;

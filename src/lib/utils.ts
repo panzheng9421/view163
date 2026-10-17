@@ -23,12 +23,6 @@ export function formatRelativeTime(timestamp: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** 停用时长的可读文案：不足 1 小时按分钟，超过按小时（按剩余时间展示时向上取整） */
-export function formatDisableTtl(ms: number): string {
-  const minutes = Math.max(1, Math.ceil(ms / 60_000));
-  return minutes >= 60 ? `${Math.round(minutes / 60)} 小时` : `${minutes} 分钟`;
-}
-
 /**
  * 封面图加载地址：direct 直连 / proxy 内置代理 / custom 自定义模板（{url} 占位符或直接拼接）。
  * 默认 proxy（内置代理），规避豆瓣防盗链与部分采集站图床直连失败。

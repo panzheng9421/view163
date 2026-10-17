@@ -28,26 +28,15 @@ export async function syncSourceSubscription(rawUrl: string): Promise<Subscripti
   // 避免同一订阅地址因尾斜杠差异被存成两条订阅
   const url = normalizeSubscriptionUrl(rawUrl);
   try {
-    const { name, sources, liveSources, stats } = await api.fetchSourceList(url);
-    if (sources.length === 0 && liveSources.length === 0) {
+    const { name, sources, stats } = await api.fetchSourceList(url);
+    if (sources.length === 0) {
       throw new Error('订阅内容为空');
     }
     const store = useAppStore.getState();
     const vodCount = store.applySubscriptionSources(url, sources);
-    const liveCount = store.applySubscriptionLive(url, liveSources);
-    // 仅对本订阅引用的直播源记录同步时间（多归属：共享源也会被标记为新鲜，
-    // 但名称/EPG 由 store 的「首次导入为准、缺失补齐」语义保护，不会被本订阅覆盖）
-    const importedLiveUrls = new Set(
-      useAppStore.getState().liveSubscriptions
-        .filter((s) => s.fromSubscriptions.includes(url))
-        .map((s) => s.url)
-    );
-    for (const s of liveSources) {
-      if (importedLiveUrls.has(s.url)) store.markLiveSynced(s.url, s.name, s.epg);
-    }
     store.addSubscription(url, name);
-    store.markSubscriptionSynced(url, name, { vod: vodCount, live: liveCount });
-    return { name, vodCount, liveCount, stats };
+    store.markSubscriptionSynced(url, name, { vod: vodCount, live: 0 });
+    return { name, vodCount, liveCount: 0, stats };
   } catch (err) {
     // 记录失败状态供订阅列表展示（首次添加未成功时不产生条目）；已导入的旧数据保持不动
     const message = err instanceof Error ? err.message : '订阅同步失败';

@@ -8,7 +8,8 @@ vi.mock('./db', () => ({
   saveLiveProbeResults: vi.fn(async () => {}),
 }));
 
-import { isInDisabledSubscription, isSourceDisabled, keyBelongsToSubscription, SOURCE_DISABLE_LADDER, subKeyPrefix, useAppStore } from './store';
+import { isInDisabledSubscription, keyBelongsToSubscription, rankSourcesByHealth, subKeyPrefix, useAppStore } from './store';
+import type { SourceHealthEntry } from './store';
 import type { SourceConfig } from './types';
 
 const store = () => useAppStore.getState();
@@ -272,81 +273,24 @@ describe('可撤销删除与订阅同步状态', () => {
   });
 });
 
-describe('点播源自动停用阶梯', () => {
+describe('点播源健康度记录（只做展示，不自动停用）', () => {
   const fail = (key: string) => ({ sourceKey: key, ok: false, error: '超时', list: [] });
   const okOutcome = (key: string) => ({ sourceKey: key, ok: true, ms: 12, list: [] });
-  /** 连续两次搜索失败（每次搜索各记录一次），返回两次调用产生的停用事件合集 */
-  const failTwice = (key: string) => [
-    ...store().recordSourceHealth([fail(key)]),
-    ...store().recordSourceHealth([fail(key)]),
-  ];
-  /** 模拟停用到期：把截止时间挪到过去 */
-  const expire = (key: string) => {
-    const entry = store().sourceHealth[key];
-    useAppStore.setState({
-      sourceHealth: { ...store().sourceHealth, [key]: { ...entry, disabledUntil: Date.now() - 1 } },
-    });
-  };
 
-  beforeEach(() => useAppStore.setState({ sourceHealth: {} }));
+  beforeEach(() => useAppStore.setState({ sourceHealth: {}, selectedKeys: [] }));
 
-  it('达到阈值才停用，首次为 30 分钟', () => {
-    expect(store().recordSourceHealth([fail('a')])).toEqual([]);
-    expect(isSourceDisabled(store(), 'a')).toBe(false);
-
-    const events = failTwice('a');
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ key: 'a', level: 1, permanent: false, ttlMs: SOURCE_DISABLE_LADDER[0] });
-    expect(isSourceDisabled(store(), 'a')).toBe(true);
+  it('连续失败只累计次数，不改变勾选状态（源仍然参与搜索）', () => {
+    useAppStore.setState({ selectedKeys: ['a'] });
+    store().recordSourceHealth([fail('a')]);
+    store().recordSourceHealth([fail('a')]);
+    expect(store().sourceHealth['a']).toMatchObject({ ok: false, failStreak: 2 });
+    expect(store().selectedKeys).toEqual(['a']);
   });
 
-  it('到期恢复后再次连续失败 → 升级为 24 小时', () => {
-    failTwice('a');
-    expire('a');
-    // 到期即恢复参与搜索（懒判断，无需清理标记）
-    expect(isSourceDisabled(store(), 'a')).toBe(false);
-
-    const events = failTwice('a');
-    expect(events[0]).toMatchObject({ level: 2, permanent: false, ttlMs: SOURCE_DISABLE_LADDER[1] });
-  });
-
-  it('阶梯用尽 → 长期停用，不随到期恢复，须手动清除', () => {
-    failTwice('a');
-    expire('a');
-    failTwice('a');
-    expire('a');
-    const events = failTwice('a');
-    expect(events[0]).toMatchObject({ level: 3, permanent: true });
-    expect(events[0].ttlMs).toBeUndefined();
-
-    // 即便把停用时间挪到过去也不会自动恢复
-    expire('a');
-    expect(isSourceDisabled(store(), 'a')).toBe(true);
-
-    store().clearSourceHealth('a');
-    expect(isSourceDisabled(store(), 'a')).toBe(false);
-  });
-
-  it('成功一次降一级：偶发抽风的源不会一路升到长期停用', () => {
-    failTwice('a'); // 第 1 级
-    expire('a');
-    failTwice('a'); // 第 2 级
-    expire('a');
-
+  it('成功一次清零失败连击并记录耗时', () => {
+    store().recordSourceHealth([fail('a')]);
     store().recordSourceHealth([okOutcome('a')]);
-    expect(store().sourceHealth['a'].disableCount).toBe(1);
-
-    const events = failTwice('a');
-    expect(events[0]).toMatchObject({ level: 2, permanent: false });
-  });
-
-  it('成功后立即清除停用标记与失败连击', () => {
-    failTwice('a');
-    expect(isSourceDisabled(store(), 'a')).toBe(true);
-
-    store().recordSourceHealth([okOutcome('a')]);
-    expect(isSourceDisabled(store(), 'a')).toBe(false);
-    expect(store().sourceHealth['a'].failStreak).toBe(0);
+    expect(store().sourceHealth['a']).toMatchObject({ ok: true, ms: 12, failStreak: 0 });
   });
 });
 
@@ -388,5 +332,74 @@ describe('订阅整体开关', () => {
     expect(isInDisabledSubscription(store(), `${subKeyPrefix(subUrl)}_1`)).toBe(true);
     expect(isInDisabledSubscription(store(), `${subKeyPrefix(otherUrl)}_1`)).toBe(false);
     expect(isInDisabledSubscription(store(), 'manual_0')).toBe(false);
+  });
+});
+
+describe('rankSourcesByHealth 降权/提权排序', () => {
+  const mk = (key: string) => ({ key });
+
+  it('成功源前置（提权）、连续失败源后置（降权）、无记录居中', () => {
+    const health = {
+      ok1: { ok: true, ms: 100, failStreak: 0, timestamp: 1 },
+      bad: { ok: false, failStreak: 3, error: '超时', timestamp: 1 },
+    };
+    const ranked = rankSourcesByHealth([mk('none'), mk('bad'), mk('ok1')], health).map((s) => s.key);
+    expect(ranked[0]).toBe('ok1'); // 提权：成功的排最前
+    expect(ranked[2]).toBe('bad'); // 降权：失败排最后
+    expect(ranked[1]).toBe('none'); // 无记录居中
+  });
+
+  it('成功源内响应越快越靠前', () => {
+    const health = {
+      fast: { ok: true, ms: 50, failStreak: 0, timestamp: 1 },
+      slow: { ok: true, ms: 500, failStreak: 0, timestamp: 1 },
+    };
+    const ranked = rankSourcesByHealth([mk('slow'), mk('fast')], health).map((s) => s.key);
+    expect(ranked).toEqual(['fast', 'slow']);
+  });
+
+  it('失败连击越多越靠后', () => {
+    const health = {
+      worse: { ok: false, failStreak: 5, timestamp: 1 },
+      mild: { ok: false, failStreak: 1, timestamp: 1 },
+    };
+    const ranked = rankSourcesByHealth([mk('worse'), mk('mild')], health).map((s) => s.key);
+    expect(ranked).toEqual(['mild', 'worse']);
+  });
+
+  it('不修改原数组', () => {
+    const arr = [mk('a'), mk('b')];
+    rankSourcesByHealth(arr, {});
+    expect(arr).toHaveLength(2);
+  });
+
+  it('混合健康度的完整排名：成功（快→慢）→ 无记录 → 失败（连击少→多）', () => {
+    const named = (key: string, name: string) => ({ key, name });
+    const health: Record<string, SourceHealthEntry> = {
+      env_7: { ok: false, failStreak: 1, error: '超时', timestamp: 1 },
+      env_5: { ok: false, failStreak: 3, error: '超时', timestamp: 1 },
+      env_4: { ok: true, ms: 900, failStreak: 0, timestamp: 1 },
+      env_1: { ok: true, ms: 320, failStreak: 0, timestamp: 1 },
+      env_0: { ok: true, ms: 1500, failStreak: 0, timestamp: 1 },
+    };
+    const ranked = rankSourcesByHealth(
+      [
+        named('env_5', '极速资源'),
+        named('env_2', '如意资源'),
+        named('env_7', '最大资源'),
+        named('env_4', '360资源'),
+        named('env_1', '电影天堂资源'),
+        named('env_0', '暴风资源'),
+      ],
+      health
+    ).map((s) => s.name);
+    expect(ranked).toEqual([
+      '电影天堂资源',
+      '360资源',
+      '暴风资源',
+      '如意资源',
+      '最大资源',
+      '极速资源',
+    ]);
   });
 });

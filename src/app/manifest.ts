@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'LibreTV - 免费在线视频搜索与观看平台',
-    short_name: 'LibreTV',
+    name: 'view163 - 免费在线视频搜索与观看平台',
+    short_name: 'view163',
     description: '免费在线视频搜索与观看平台',
     start_url: '/',
     display: 'standalone',

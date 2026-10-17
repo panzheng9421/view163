@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { guardRequest, jsonError } from '@/lib/api-guard';
 import { checkLiveUrlAllowed, isBlockedByDNS, isValidProxyUrl } from '@/lib/ssrf';
-import { fetchWithSafeRedirects } from '@/lib/fetch-utils';
+import { fetchWithSafeRedirects, hasUpstreamProxy } from '@/lib/fetch-utils';
 import { rewriteM3u8, LIVE_STREAM_BASE } from '@/lib/m3u8';
 
 /**
@@ -92,19 +92,36 @@ export async function handleProxyRequest(req: Request, targetUrl: string): Promi
   let response: Response | undefined;
   let finalUrl = targetUrl;
   let lastError: unknown = null;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const result = await fetchWithSafeRedirects(targetUrl, {
-        headers,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      response = result.res;
-      finalUrl = result.finalUrl;
-      lastError = null;
-      break;
-    } catch (err) {
-      lastError = err;
+  /**
+   * 出网方向：媒体链路（m3u8 / 分片 / key / 封面）优先直连。
+   * 国内视频 CDN 实测「经代理 403、直连 200」，而 UPSTREAM_PROXY 是为了让源站 API
+   * 穿过 Cloudflare——两者方向相反。所以这里先直连，非 2xx 或抛错再退代理，
+   * 保证「国内 CDN 能播」与「海外 CDN 有兜底」同时成立。
+   */
+  const plans = hasUpstreamProxy ? [true, false] : [true];
+  for (const noProxy of plans) {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const result = await fetchWithSafeRedirects(
+          targetUrl,
+          { headers, signal: AbortSignal.timeout(TIMEOUT_MS) },
+          { noProxy }
+        );
+        lastError = null;
+        // 直连非 2xx（403/404/502 等）：还有代理可试就交给下一轮，别把 403 当最终结果
+        if (noProxy && plans.length > 1 && !result.res.ok) {
+          lastError = new Error(`直连返回 ${result.res.status}`);
+          try { await result.res.body?.cancel(); } catch { /* 释放连接 */ }
+          break;
+        }
+        response = result.res;
+        finalUrl = result.finalUrl;
+        break;
+      } catch (err) {
+        lastError = err;
+      }
     }
+    if (response) break;
   }
   if (!response) {
     return new NextResponse(
@@ -121,6 +138,18 @@ export async function handleProxyRequest(req: Request, targetUrl: string): Promi
   // m3u8 文本：重写为代理地址（以重定向后的最终 URL 为 base 解析相对地址）
   if (isM3u8) {
     const text = await response.text();
+    // 上游可能返回 HTML 错误页（403 / 502 / 防盗链）：绝不能当 m3u8 重写。
+    // 否则每一行都会被拼成 /api/proxy?url=...，产出满屏乱码并把真实错误彻底掩盖。
+    if (!text.trimStart().startsWith('#EXTM3U')) {
+      return new NextResponse(text, {
+        status: response.status,
+        headers: {
+          'Content-Type': contentType || 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
     return new NextResponse(rewriteM3u8(text, finalUrl), {
       status: response.status,
       headers: {

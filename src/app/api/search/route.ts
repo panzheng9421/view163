@@ -1,9 +1,22 @@
 import { NextResponse } from 'next/server';
 import { guardRequest } from '@/lib/api-guard';
-import { cmsRequestHeaders, filterAdultResults, filterRelevantResults, normalizeTitle, parseSearchList } from '@/lib/cms-parser';
+import {
+  cmsRequestHeaders,
+  filterAdultResults,
+  filterRelevantResults,
+  healthWeight,
+  parseSearchList,
+  scoreSearchResult,
+} from '@/lib/cms-parser';
 import { fetchUpstream, getCache, setCache } from '@/lib/fetch-utils';
 import { checkUpstreamAllowed } from '@/lib/ssrf';
-import type { SearchResponse, SearchStreamEvent, SourceConfig, SourceSearchOutcome } from '@/lib/types';
+import type {
+  SearchResponse,
+  SearchStreamEvent,
+  SourceConfig,
+  SourceHealthHint,
+  SourceSearchOutcome,
+} from '@/lib/types';
 
 export const runtime = 'nodejs';
 
@@ -11,15 +24,35 @@ interface SearchBody {
   wd: string;
   sources: SourceConfig[];
   filterAdult?: boolean;
+  /**
+   * 各源的健康度摘要（按 sourceKey）。前端把上次搜索的成败/耗时/连败次数带下来，
+   * 用于最终排序的提权降权；缺失的源按 0 处理，不偏不倚。
+   */
+  health?: Record<string, SourceHealthHint>;
 }
 
 /** 搜索结果短缓存：同一关键词 + 同一组源在 TTL 内直接返回（播放页返回搜索页等场景） */
 const SEARCH_CACHE_TTL = 60 * 1000;
 
-/** 缓存键：wd + 成人过滤 + 排序后的源地址集合（直接用完整字符串，避免哈希碰撞串缓存） */
-function searchCacheKey(wd: string, sources: SourceConfig[], filterAdult: boolean): string {
+/**
+ * 缓存键：wd + 成人过滤 + 排序后的源地址集合 + 健康度摘要（直接用完整字符串，避免哈希碰撞串缓存）。
+ * 健康度必须进键：它参与最终排序，若只按关键词缓存，60s 内重复搜索会一直返回旧排序，
+ * 表现为「降权/提权不生效」。耗时 ms 不进键——后端排序不读它。
+ */
+function searchCacheKey(
+  wd: string,
+  sources: SourceConfig[],
+  filterAdult: boolean,
+  health?: Record<string, SourceHealthHint>
+): string {
   const urls = sources.map((s) => s.url.replace(/\/+$/, '')).sort().join('|');
-  return `search:${wd}\n${filterAdult ? 1 : 0}\n${urls}`;
+  const hints = health
+    ? Object.keys(health)
+        .sort()
+        .map((k) => `${k}:${health[k].ok ? 1 : 0}:${health[k].failStreak ?? 0}`)
+        .join('|')
+    : '';
+  return `search:${wd}\n${filterAdult ? 1 : 0}\n${urls}\n${hints}`;
 }
 
 /**
@@ -151,7 +184,12 @@ async function searchSource(source: SourceConfig, wd: string): Promise<SourceSea
 }
 
 /** 合并 + 去重 + 过滤 + 排序，stream 与非 stream 两种模式共用 */
-function aggregateOutcomes(outcomes: SourceSearchOutcome[], wd: string, filterAdult: boolean): SearchResponse {
+function aggregateOutcomes(
+  outcomes: SourceSearchOutcome[],
+  wd: string,
+  filterAdult: boolean,
+  health?: Record<string, SourceHealthHint>
+): SearchResponse {
   const seen = new Set<string>();
   let list = outcomes.flatMap((o) => o.list).filter((item) => {
     const key = `${item.sourceKey}_${item.vodId}`;
@@ -164,12 +202,15 @@ function aggregateOutcomes(outcomes: SourceSearchOutcome[], wd: string, filterAd
   // 部分源站做分词/OR 模糊搜索（搜「摔跤吧！爸爸」返回一堆「爸爸XXX」），按关键词过滤
   list = filterRelevantResults(list, wd);
 
-  // 精确命中（忽略标点差异）排在最前，其余按名称（与旧版一致），名称相同按源名
-  const exact = normalizeTitle(wd);
+  // 相关度打分排序（2026-10-17 替代「精确同名排最前」）：
+  // 同名 > 开头 > 包含；HD/完结加分、TC/枪版/预告/解说沉底；年份新鲜度弱加权。
+  // 解决源站同片多条目时枪版靠完全同名压住高清版的问题（如「希望」vs「希望2026」）。
+  // 再叠加源健康度加权：上次成功的源提权、连败的源降权（见 healthWeight）。
+  // 同分保持旧语义：名字 localeCompare → 源名。
   list.sort((a, b) => {
-    const aExact = normalizeTitle(a.name || '') === exact ? 0 : 1;
-    const bExact = normalizeTitle(b.name || '') === exact ? 0 : 1;
-    if (aExact !== bExact) return aExact - bExact;
+    const aScore = scoreSearchResult(a, wd) + healthWeight(health?.[a.sourceKey]);
+    const bScore = scoreSearchResult(b, wd) + healthWeight(health?.[b.sourceKey]);
+    if (aScore !== bScore) return bScore - aScore;
     const nameCompare = (a.name || '').localeCompare(b.name || '', 'zh-Hans-CN');
     if (nameCompare !== 0) return nameCompare;
     return (a.sourceName || '').localeCompare(b.sourceName || '', 'zh-Hans-CN');
@@ -209,7 +250,7 @@ export async function POST(req: Request) {
   const sources = body.sources.slice(0, 50);
   const filterAdult = body.filterAdult !== false;
 
-  const cacheKey = searchCacheKey(wd, sources, filterAdult);
+  const cacheKey = searchCacheKey(wd, sources, filterAdult, body.health);
   const cached = getCache<SearchResponse>(cacheKey);
   if (cached) {
     // 流式模式下缓存命中也要走 done 事件，客户端解析逻辑保持单一
@@ -225,7 +266,7 @@ export async function POST(req: Request) {
   const isStream = new URL(req.url).searchParams.get('stream') === '1';
   if (!isStream) {
     const outcomes = await Promise.all(sources.map((source) => searchSource(source, wd)));
-    const payload = aggregateOutcomes(outcomes, wd, filterAdult);
+    const payload = aggregateOutcomes(outcomes, wd, filterAdult, body.health);
     setCache(cacheKey, payload, SEARCH_CACHE_TTL);
     return NextResponse.json(payload);
   }
@@ -253,7 +294,7 @@ export async function POST(req: Request) {
         })
       );
 
-      const payload = aggregateOutcomes(outcomes, wd, filterAdult);
+      const payload = aggregateOutcomes(outcomes, wd, filterAdult, body.health);
       setCache(cacheKey, payload, SEARCH_CACHE_TTL);
       send({ type: 'done', list: payload.list, failures: payload.failures });
       closed = true;

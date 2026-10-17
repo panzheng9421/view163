@@ -55,8 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .fetchQuery({ queryKey: STATUS_QUERY_KEY, queryFn: () => api.status() })
       .then((s) => {
         if (cancelled) return;
-        setVerified(s.verified);
-        setSetupRequired(!s.passwordRequired);
+        setVerified(s.verified || !!s.authDisabled);
+        setSetupRequired(!s.passwordRequired && !s.authDisabled);
         setVersion(s.version);
         setChecked(true);
       })
@@ -173,13 +173,13 @@ function LoginModal({
 
   return (
     <div
-      className="fixed inset-0 z-[95] flex items-center justify-center bg-black/80 animate-fade-in"
+      className="fixed inset-0 z-[95] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className="bg-surface-raised rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl"
+        className="bg-surface-raised rounded-shell p-6 w-full max-w-sm mx-4 shadow-modal ring-1 ring-black/[0.06] dark:ring-white/10"
         role="dialog"
         aria-modal="true"
         aria-label={setupRequired ? '需要配置密码' : '访问验证'}

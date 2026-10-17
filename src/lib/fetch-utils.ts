@@ -1,5 +1,6 @@
 /** 服务端上游请求工具：超时、重试、安全跳转、JSON 解析 */
 
+import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { checkLiveUrlAllowed, checkUpstreamAllowed } from './ssrf';
 
 export interface FetchOptions extends RequestInit {
@@ -15,10 +16,41 @@ export interface FetchOptions extends RequestInit {
    * 校验复用 checkLiveUrlAllowed，与直播流代理使用同一把尺子。
    */
   allowPrivate?: boolean;
+  /**
+   * 绕过 UPSTREAM_PROXY 直连。
+   * 视频 CDN（m3u8/ts/key）在国内、且普遍拒绝代理出口 IP（实测经代理返回 403、
+   * 直连 200），而 UPSTREAM_PROXY 存在的意义是让源站 API 过 Cloudflare——
+   * 两者方向相反，媒体链路必须能单独走直连。
+   */
+  noProxy?: boolean;
 }
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECT_HOPS = 5;
+
+/**
+ * 可选出网代理：Node 原生 fetch 不读系统代理，本地/VPN 环境下直连海外源站易超时。
+ * 设了 UPSTREAM_PROXY（如 http://127.0.0.1:7897）就把上游请求改走代理；
+ * 不设则完全保持原生 fetch 行为（云服务器直连正常的环境无需此变量）。
+ */
+const UPSTREAM_PROXY = (process.env.UPSTREAM_PROXY || '').trim();
+const proxyDispatcher = UPSTREAM_PROXY ? new ProxyAgent(UPSTREAM_PROXY) : null;
+
+/** 统一出网入口：配了代理走代理，未配走原生 fetch */
+const upstreamFetch: typeof fetch = proxyDispatcher
+  ? ((input: RequestInfo | URL, init?: RequestInit) =>
+      undiciFetch(input as string, {
+        ...init,
+        dispatcher: proxyDispatcher,
+      } as never) as unknown as Promise<Response>)
+  : fetch;
+
+/** 是否配置了 UPSTREAM_PROXY：调用方可据此决定「直连优先、代理兜底」的双路策略 */
+export const hasUpstreamProxy = Boolean(proxyDispatcher);
+
+/** 按方向选出网方式：noProxy 时强制直连，忽略 UPSTREAM_PROXY */
+const pickFetch = (noProxy: boolean): typeof fetch =>
+  noProxy && proxyDispatcher ? fetch : upstreamFetch;
 
 export interface FetchResult {
   res: Response;
@@ -39,6 +71,8 @@ export interface SafeRedirectOptions {
    * 超时触发即整链失败（内部 controller 已 abort，对齐直播路由原行为）。
    */
   headerTimeoutMs?: number;
+  /** 绕过 UPSTREAM_PROXY 直连（每一跳都直连），用于媒体 CDN 拒绝代理出口的场景 */
+  noProxy?: boolean;
 }
 
 /**
@@ -51,7 +85,8 @@ export async function fetchWithSafeRedirects(
   init: Omit<RequestInit, 'redirect'> = {},
   options: SafeRedirectOptions = {}
 ): Promise<FetchResult> {
-  const { allowPrivate = false, headerTimeoutMs } = options;
+  const { allowPrivate = false, headerTimeoutMs, noProxy = false } = options;
+  const doFetch = pickFetch(noProxy);
   let current = url;
   // headerTimeout 超时即 abort 内部 controller；外部 signal（调用方死线/客户端断开）链入同一 controller
   const controller = new AbortController();
@@ -69,7 +104,7 @@ export async function fetchWithSafeRedirects(
     const timer = headerTimeoutMs ? setTimeout(() => controller.abort(), headerTimeoutMs) : null;
     let res: Response;
     try {
-      res = await fetch(current, { ...init, signal: controller.signal, redirect: 'manual' });
+      res = await doFetch(current, { ...init, signal: controller.signal, redirect: 'manual' });
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -87,7 +122,14 @@ export async function fetchUpstream(url: string, options: FetchOptions = {}): Pr
 
 /** 同 fetchUpstream，额外返回重定向后的最终 URL */
 export async function fetchUpstreamWithMeta(url: string, options: FetchOptions = {}): Promise<FetchResult> {
-  const { timeoutMs = 8000, retries = 0, safeRedirects = true, allowPrivate = false, ...init } = options;
+  const {
+    timeoutMs = 8000,
+    retries = 0,
+    safeRedirects = true,
+    allowPrivate = false,
+    noProxy = false,
+    ...init
+  } = options;
   // 外部 signal（调用方的总死线中断）与单次超时合并：任一触发即中断请求
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = init.signal
@@ -97,7 +139,7 @@ export async function fetchUpstreamWithMeta(url: string, options: FetchOptions =
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       if (!safeRedirects) {
-        const res = await fetch(url, {
+        const res = await pickFetch(noProxy)(url, {
           ...init,
           signal,
           redirect: init.redirect ?? 'follow',
@@ -105,7 +147,7 @@ export async function fetchUpstreamWithMeta(url: string, options: FetchOptions =
         return { res, finalUrl: res.url || url };
       }
       // 手动逐跳跟随，每一跳重新过 SSRF 校验
-      return await fetchWithSafeRedirects(url, { ...init, signal }, { allowPrivate });
+      return await fetchWithSafeRedirects(url, { ...init, signal }, { allowPrivate, noProxy });
     } catch (err) {
       lastError = err;
     }

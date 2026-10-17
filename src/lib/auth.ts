@@ -20,6 +20,13 @@ export function isPasswordConfigured(): boolean {
   return getPassword().length > 0;
 }
 
+/**
+ * 二开开关：在环境变量设 DISABLE_AUTH=true 时彻底关闭登录鉴权。
+ * 用于自用 / 内网部署，访客进首页即能搜索观看，无需密码。
+ * 公网部署请勿开启。设为 false 或不设即恢复原生密码逻辑。
+ */
+export const AUTH_DISABLED = process.env.DISABLE_AUTH === 'true';
+
 function getSecret(): string {
   if (process.env.PROXY_SECRET) return process.env.PROXY_SECRET;
   return crypto.createHash('sha256').update(getPassword() + ':libretv::session-salt').digest('hex');

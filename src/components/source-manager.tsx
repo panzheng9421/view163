@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Drawer } from './drawer';
 import { ConfirmDialog } from './confirm-dialog';
 import { Icon, type IconName } from './icon';
-import { LiveSourceManager } from './live-source-manager';
 import {
   HealthBadge,
   SearchInput,
@@ -19,7 +18,7 @@ import {
 import { loadCacheSettings, saveCacheSettings, getCacheSummary, clearVideoCache, type CacheSummary } from '@/lib/video-cache';
 import { EmptyState, Spinner } from './states';
 import { useSourceProbe } from './use-source-probe';
-import { allLiveSources, isSourceDisabled, keyBelongsToSubscription, resolveSource, subKeyPrefix, useAppStore } from '@/lib/store';
+import { allLiveSources, keyBelongsToSubscription, resolveSource, subKeyPrefix, useAppStore } from '@/lib/store';
 import type { SourceConfig } from '@/lib/types';
 import { useToast } from './toast';
 import { formatRelativeTime, hostnameOf, validateSourceUrl, cn } from '@/lib/utils';
@@ -39,7 +38,7 @@ import { describeParseStats } from '@/lib/tvbox-parser';
  */
 
 type PrimaryTab = 'sources' | 'prefs' | 'data';
-type SecondaryTab = 'vod' | 'live' | 'subs' | 'playback' | 'image' | 'home' | 'io';
+type SecondaryTab = 'vod' | 'subs' | 'playback' | 'image' | 'home' | 'io';
 
 const PRIMARY_TABS: { id: PrimaryTab; label: string; icon: IconName }[] = [
   { id: 'sources', label: '源管理', icon: 'link' },
@@ -50,7 +49,6 @@ const PRIMARY_TABS: { id: PrimaryTab; label: string; icon: IconName }[] = [
 const SECONDARY_TABS: Record<PrimaryTab, { id: SecondaryTab; label: string }[]> = {
   sources: [
     { id: 'vod', label: '点播源' },
-    { id: 'live', label: '直播源' },
     { id: 'subs', label: '数据源订阅' },
   ],
   prefs: [
@@ -131,7 +129,6 @@ export function SourceManagerDrawer({ open, onClose }: { open: boolean; onClose:
       }
     >
       {current === 'vod' && <VodSourcesPanel />}
-      {current === 'live' && <LiveSourceManager />}
       {current === 'playback' && <PlaybackPanel />}
       {current === 'image' && <ImagePanel />}
       {current === 'home' && <HomePanel />}
@@ -163,7 +160,7 @@ function TabRow<T extends string>({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={cn('flex w-full gap-1', variant === 'primary' && 'p-0.5 bg-chip rounded-lg')}
+      className={cn('flex w-full gap-1', variant === 'primary' && 'p-0.5 bg-chip rounded-tile')}
       onKeyDown={(e) => {
         if (e.key === 'ArrowRight') {
           e.preventDefault();
@@ -187,7 +184,7 @@ function TabRow<T extends string>({
               variant === 'primary'
                 ? cn(
                     'px-2 py-1.5 text-xs',
-                    active ? 'bg-surface-raised text-accent font-medium shadow-sm' : 'text-muted hover:text-content'
+                    active ? 'bg-surface-raised text-accent font-medium shadow-glass' : 'text-muted hover:text-content'
                   )
                 : cn(
                     'px-2.5 py-1 text-xs',
@@ -207,13 +204,12 @@ function TabRow<T extends string>({
 
 // —— 点播源面板 ——
 
-type VodFilter = 'all' | 'enabled' | 'disabled' | 'sub' | 'manual';
+type VodFilter = 'all' | 'enabled' | 'sub' | 'manual';
 
-// 与直播源面板保持同一组筛选项与顺序：先状态（已启用 / 已停用），后来源（来自订阅 / 手动添加）
+// 先状态（已启用），后来源（来自订阅 / 手动添加）
 const VOD_FILTERS: { id: VodFilter; label: string }[] = [
   { id: 'all', label: '全部' },
   { id: 'enabled', label: '已启用' },
-  { id: 'disabled', label: '已停用' },
   { id: 'sub', label: '来自订阅' },
   { id: 'manual', label: '手动添加' },
 ];
@@ -234,9 +230,8 @@ function VodSourcesPanel() {
     const q = query.trim().toLowerCase();
     return all.filter((s) => {
       const fromSub = s.key.startsWith('sub_');
-      // 已启用 = 勾选中且当前未被自动停用（即真正在参与搜索的源）
-      if (filter === 'enabled' && !(store.selectedKeys.includes(s.key) && !isSourceDisabled(store, s.key))) return false;
-      if (filter === 'disabled' && !isSourceDisabled(store, s.key)) return false;
+      // 已启用 = 勾选中（健康度只做展示，不影响是否参与搜索）
+      if (filter === 'enabled' && !store.selectedKeys.includes(s.key)) return false;
       if (filter === 'sub' && !fromSub) return false;
       // 手动添加 = 既非订阅导入、也非部署者预置
       if (filter === 'manual' && (fromSub || envKeys.has(s.key))) return false;
@@ -268,14 +263,6 @@ function VodSourcesPanel() {
     const result = await probe(filtered.map((s) => ({ key: s.key, url: s.url })));
     if (!result) return; // 被取消则无汇总
     toast(`测活完成：${result.ok}/${result.total} 个可用`, result.ok === result.total ? 'success' : 'info');
-  };
-
-  /** 一键恢复被自动停用的源（仅「已停用」筛选下提供） */
-  const restoreAll = () => {
-    const keys = filtered.filter((s) => isSourceDisabled(store, s.key)).map((s) => s.key);
-    if (keys.length === 0) return;
-    keys.forEach((k) => useAppStore.getState().clearSourceHealth(k));
-    toast(`已恢复 ${keys.length} 个源`, 'success');
   };
 
   const empty = store.envSources.length === 0 && store.customAPIs.length === 0;
@@ -344,12 +331,6 @@ function VodSourcesPanel() {
               >
                 {isProbing ? '取消测活' : '批量测活'}
               </button>
-              {/* 查看「已停用」时提供一键恢复，省去逐个点击 */}
-              {filter === 'disabled' && (
-                <button className="btn-ghost btn-sm" onClick={restoreAll} disabled={filtered.length === 0}>
-                  全部恢复
-                </button>
-              )}
             </div>
             {progress && (
               <div className="flex items-center gap-2 text-[11px] text-muted">
@@ -484,7 +465,7 @@ function VodSourceRow({
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-content truncate">
             {api.name}
-            {api.isAdult && <span className="text-pink-400 text-xs ml-1">(18+)</span>}
+            {api.isAdult && <span className="text-danger text-xs ml-1">(18+)</span>}
             {isEnv && (
               <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-chip text-faint align-middle">
                 部署者预置
@@ -786,7 +767,7 @@ function SourceSubscriptions() {
     const seen = new Set<string>();
     const sources = store.selectedKeys
       .map((key) => resolveSource(store, key))
-      .filter((s): s is SourceConfig => !!s && validateSourceUrl(s.url) && !isSourceDisabled(store, s.key))
+      .filter((s): s is SourceConfig => !!s && validateSourceUrl(s.url))
       .filter((s) => {
         const key = s.url.replace(/\/+$/, '');
         if (seen.has(key)) return false;
@@ -900,7 +881,7 @@ function SourceSubscriptions() {
 
       {/* 发布结果：链接公开可读、粘贴板也可能随时清理，这些风险直接写在这里而不是只在 toast 里闪一下 */}
       {published && (
-        <div className="mb-3 rounded-lg border border-line bg-chip/60 p-2.5">
+        <div className="mb-3 rounded-tile ring-1 ring-black/[0.08] dark:ring-white/10 bg-chip/60 p-2.5">
           <div className="flex items-center gap-1.5">
             <input
               readOnly
@@ -956,7 +937,6 @@ function SourceSubscriptions() {
         <ul className="space-y-2">
           {store.subscriptions.map((sub) => {
             const vodCount = store.customAPIs.filter((a) => keyBelongsToSubscription(a.key, subKeyPrefix(sub.url))).length;
-            const liveCount = store.liveSubscriptions.filter((s) => s.fromSubscriptions.includes(sub.url)).length;
             const isSyncing = syncing.has(sub.url);
             return (
               <li
@@ -976,7 +956,6 @@ function SourceSubscriptions() {
                     </div>
                     <div className="mt-1 flex items-center gap-1 flex-wrap">
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent">点播 {vodCount}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent">直播 {liveCount}</span>
                       {sub.enabled === false && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning">已停用</span>
                       )}
@@ -989,7 +968,7 @@ function SourceSubscriptions() {
                         </span>
                       ) : sub.lastStatus === 'ok' && sub.lastCounts ? (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">
-                          上次导入 {sub.lastCounts.vod} 点播 / {sub.lastCounts.live} 直播
+                          上次导入 {sub.lastCounts.vod} 点播
                         </span>
                       ) : null}
                     </div>
@@ -1046,7 +1025,6 @@ function SourceSubscriptions() {
                 const impact = deleteImpact(pendingDelete);
                 const parts: string[] = [];
                 if (impact.vod > 0) parts.push(`${impact.vod} 个点播源`);
-                if (impact.live > 0) parts.push(`${impact.live} 个直播源`);
                 return parts.length > 0
                   ? `将同时删除该订阅导入的 ${parts.join(' 与 ')}；你收藏的频道会保留。`
                   : '该订阅当前未导入任何源，删除后不影响其他数据。';
@@ -1165,9 +1143,8 @@ function summarizeConfig(text: string): string {
     try {
       const state = (JSON.parse(settingsRaw) as { state?: Record<string, unknown> }).state ?? {};
       const vod = Array.isArray(state.customAPIs) ? state.customAPIs.length : 0;
-      const live = Array.isArray(state.liveSubscriptions) ? state.liveSubscriptions.length : 0;
       const subs = Array.isArray(state.subscriptions) ? state.subscriptions.length : 0;
-      parts.push(`${vod} 个点播源`, `${live} 个直播源`, `${subs} 个订阅`);
+      parts.push(`${vod} 个点播源`, `${subs} 个订阅`);
     } catch {
       /* 设置片段损坏时忽略该部分统计 */
     }
@@ -1227,7 +1204,7 @@ function SourceForm({
   };
 
   return (
-    <div className="space-y-2 border border-line rounded-lg p-3 bg-chip mb-2">
+    <div className="space-y-2 ring-1 ring-black/[0.08] dark:ring-white/10 rounded-tile p-3 bg-chip mb-2">
     <input
       className="input w-full"
       aria-label="点播源名称"
@@ -1252,7 +1229,7 @@ function SourceForm({
       <label className="flex items-center gap-2 text-xs text-muted">
         <input
           type="checkbox"
-          className="h-3.5 w-3.5 accent-pink-500"
+          className="h-3.5 w-3.5 accent-accent"
           checked={isAdult}
           onChange={(e) => setIsAdult(e.target.checked)}
         />

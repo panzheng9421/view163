@@ -10,8 +10,9 @@ import { StreamingTransmuxer } from './mp4-transmuxer';
  * - 保存目标（FS Access / 内存）由调用方在用户手势内选好传入，本模块只管写。
  *
  * 文件层断点的现实约束：FS Access 句柄与内存 Blob 都活不过页面刷新，
- * 因此「断点续传」指网络层——刷新后重试同一任务会跳过已下载的分片，
- * 但需要用户重新选择保存位置。
+ * 因此「断点续传」指网络层——刷新后任务被调度器自动捡回（僵死 downloading
+ * 退 waiting），已下载分片全部跳过；没有保存位置时以 downloadOnly 模式先把
+ * 分片续传完，写出等用户点「继续」重选位置后进行。
  */
 
 const DL_CACHE_NAME = 'libretv-dl-v1';
@@ -124,6 +125,11 @@ export interface DownloadJobOptions {
   onProgress: (p: DownloadProgress) => void;
   /** 在用户手势内选好的保存目标 */
   target: import('./download-saver').SaveTarget;
+  /**
+   * 只下载分片不写出（刷新恢复场景）：保存目标活不过页面刷新，
+   * 此时先把分片续传完（Cache Storage 断点），写出等用户重选位置后进行。
+   */
+  downloadOnly?: boolean;
 }
 
 /**
@@ -221,6 +227,12 @@ export async function runDownloadJob(opts: DownloadJobOptions): Promise<void> {
   };
   await Promise.all(Array.from({ length: concurrency }, worker));
   if (signal.aborted) return;
+
+  // —— 只下载模式：分片已全进缓存，写出等用户重选保存位置后进行 ——
+  if (opts.downloadOnly) {
+    report(total, total, 'done');
+    return;
+  }
 
   // —— 顺序写出（转封装 / 拼接） ——
   report(total, total, 'processing');

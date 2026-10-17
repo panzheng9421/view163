@@ -165,7 +165,7 @@ export function SwitchSourceModal({
 
   return (
     <div
-      className="fixed inset-0 z-[65] flex items-start justify-center overflow-y-auto bg-black/80 py-10 px-4 animate-fade-in"
+      className="fixed inset-0 z-[65] flex items-start justify-center overflow-y-auto bg-black/70 backdrop-blur-sm py-10 px-4 animate-fade-in"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -173,7 +173,7 @@ export function SwitchSourceModal({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="bg-surface-raised rounded-xl w-full max-w-3xl shadow-2xl p-5 animate-slide-up outline-none"
+        className="bg-surface-raised rounded-shell w-full max-w-3xl shadow-modal ring-1 ring-black/[0.06] dark:ring-white/10 p-5 animate-slide-up outline-none"
         role="dialog"
         aria-modal="true"
         aria-label={`换源：${currentTitle}`}
@@ -204,7 +204,7 @@ export function SwitchSourceModal({
           <EmptyState variant="plain" title="其他点播源未找到同名资源" />
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {sorted.map((c) => {
+            {sorted.map((c, i) => {
               const isCurrent = c.source.key === currentSourceKey && String(c.result.vodId) === String(currentVodId);
               const cardKey = `${c.source.key}_${c.result.vodId}`;
               const img = c.result.pic;
@@ -212,7 +212,7 @@ export function SwitchSourceModal({
               return (
                 <button
                   key={`${c.source.key}_${c.result.vodId}`}
-                  className={cn('text-left group relative rounded-lg overflow-hidden bg-card transition-transform', !isCurrent && 'hover:scale-[1.03] cursor-pointer', isCurrent && 'cursor-default')}
+                  className={cn('text-left group relative rounded-tile overflow-hidden bg-card transition-[transform,box-shadow] duration-700 ease-swift', !isCurrent && 'hover:ring-1 hover:ring-accent/40 cursor-pointer', isCurrent && 'cursor-default')}
                   onClick={() => !isCurrent && switchTo(c)}
                   disabled={isCurrent}
                 >
@@ -244,9 +244,7 @@ export function SwitchSourceModal({
                     )}
                   </div>
                   <div className="p-2">
-                    <div className="text-xs font-medium text-content truncate" title={c.source.name}>
-                      {c.source.name}
-                    </div>
+                    <div className="text-xs font-medium text-content truncate">资源 {i + 1}</div>
                     <div className="text-xs text-faint mt-0.5">{c.episodes ? `${c.episodes} 集` : '无资源'}</div>
                   </div>
                 </button>

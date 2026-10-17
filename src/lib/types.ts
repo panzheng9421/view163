@@ -10,6 +10,19 @@ export interface SourceConfig {
   isAdult?: boolean;
 }
 
+/**
+ * 前端传给后端的「源健康度摘要」：只带排序所需的最小信息。
+ * 单独定义而不复用 store 的 SourceHealthEntry，是为了不让后端反向依赖客户端 store。
+ */
+export interface SourceHealthHint {
+  /** 上次搜索是否成功 */
+  ok: boolean;
+  /** 连续失败/超时次数；成功时为 0 */
+  failStreak: number;
+  /** 上次响应耗时（毫秒），仅成功时有意义 */
+  ms?: number;
+}
+
 export interface SearchResultItem {
   sourceKey: string;
   sourceName: string;
@@ -23,6 +36,14 @@ export interface SearchResultItem {
   /** 自定义源的 API 地址，详情请求需要 */
   sourceUrl?: string;
   isAdult?: boolean;
+  /** 源站播放量（部分源返回，用于「最热」排序） */
+  hits?: number;
+  /** 源站评分（部分源返回，用于「高分好评」排序） */
+  score?: number;
+  /** 主演列表（逗号分隔原文，如「梁洛施 , 文俊辉 , 洪金宝」） */
+  actor?: string;
+  /** 导演 */
+  director?: string;
 }
 
 export interface VideoInfo {
@@ -71,6 +92,31 @@ export interface SearchResponse {
   failures: { sourceKey: string; error: string; timedOut?: boolean }[];
 }
 
+/** 一级分类的中文标签（顶栏平铺的四个入口） */
+export type CategoryKey = '电影' | '电视剧' | '综艺' | '动漫';
+
+/**
+ * 分类页排序方式。
+ * - `new`：源站默认顺序（bfzy 实测即按更新时间倒序），全量分页
+ * - `hot`：按播放量 vod_hits 降序
+ * - `score`：按评分 vod_score 降序
+ *
+ * 注意：bfzy（以及多数采集站）**不支持**服务端排序参数（by=/order= 实测被忽略），
+ * 因此 hot/score 由后端拉取「最近更新的若干页」合并后按真实字段排序，
+ * 属于「近期热门/近期高分」，覆盖范围天然小于 new 的全量。
+ */
+export type CategorySort = 'new' | 'hot' | 'score';
+
+/** /api/category 单源分类浏览响应 */
+export interface CategoryResponse {
+  list: SearchResultItem[];
+  page: number;
+  pagecount: number;
+  total: number;
+  /** 本次结果使用的排序方式 */
+  sort?: CategorySort;
+}
+
 /** /api/search?stream=1 的 NDJSON 事件：逐源推送 + 最终聚合 */
 export type SearchStreamEvent =
   | ({ type: 'source' } & SourceSearchOutcome)
@@ -78,6 +124,8 @@ export type SearchStreamEvent =
 
 export interface DoubanResponse {
   items: DoubanItem[];
+  /** 分页模式下返回：榜单总条数（全部页「查看更多」判断是否还有更多） */
+  total?: number;
 }
 
 export interface BangumiCalendarDay {
@@ -95,6 +143,8 @@ export interface AuthStatusResponse {
   passwordRequired: boolean;
   /** 当前会话是否已验证 */
   verified: boolean;
+  /** 鉴权是否被 DISABLE_AUTH 关闭（二开自用模式），前端据此跳过登录框 */
+  authDisabled?: boolean;
   version: string;
   /** 部署者通过 DEFAULT_SOURCES 环境变量预置的采集站（未配置时为空数组） */
   defaultSources: SourceConfig[];

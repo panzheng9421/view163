@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { ModalShell } from './modal';
 
 /**
  * 破坏性操作确认弹窗（分级确认中的「重操作」）：
@@ -61,14 +62,13 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 animate-fade-in" onClick={onCancel} aria-hidden />
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-label={title}
-        className="relative bg-surface-raised rounded-xl w-full max-w-sm shadow-2xl p-5 animate-slide-up"
-      >
+    <ModalShell
+      onClose={onCancel}
+      role="alertdialog"
+      aria-label={title}
+      panelClassName="max-w-sm"
+    >
+      <div className="p-5">
         <h2 className="text-base font-semibold text-content mb-2">{title}</h2>
         {message && <div className="text-sm text-muted leading-relaxed">{message}</div>}
         <div className="flex gap-2 justify-end mt-5">
@@ -87,6 +87,6 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }

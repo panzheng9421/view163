@@ -4,6 +4,7 @@ import {
   extractM3u8FromText,
   filterAdultResults,
   filterRelevantResults,
+  healthWeight,
   isAdultContent,
   isRelevant,
   normalizeTitle,
@@ -202,5 +203,35 @@ describe('filterRelevantResults', () => {
   it('全部不相关时回退为原列表', () => {
     const junk = [{ name: '爸爸当家' }, { name: '爸爸别走' }];
     expect(filterRelevantResults(junk, wd)).toEqual(junk);
+  });
+});
+
+describe('healthWeight 源健康度加权', () => {
+  it('无记录 → 不加不减', () => {
+    expect(healthWeight()).toBe(0);
+  });
+
+  it('上次成功 → 提权加分', () => {
+    expect(healthWeight({ ok: true, failStreak: 0, ms: 120 })).toBeGreaterThan(0);
+  });
+
+  it('连续失败 → 扣分，且连击越多扣得越多', () => {
+    const one = healthWeight({ ok: false, failStreak: 1 });
+    const five = healthWeight({ ok: false, failStreak: 5 });
+    expect(one).toBeLessThan(0);
+    expect(five).toBeLessThan(one);
+  });
+
+  it('单次抖动的扣分远小于「同名 vs 包含」的档差，坏源结果不会整体插队', () => {
+    // 相关度档差：同名 100、包含 30，相差 70；单次抖动只扣 6 分
+    expect(Math.abs(healthWeight({ ok: false, failStreak: 1 }))).toBeLessThan(70);
+    // 即便连败到封顶（30 分）也仍不足以让「包含」翻过「同名」
+    expect(Math.abs(healthWeight({ ok: false, failStreak: 99 }))).toBeLessThan(70);
+  });
+
+  it('扣分有封顶，连败再多也不会无限沉底', () => {
+    const cap = healthWeight({ ok: false, failStreak: 999 });
+    expect(cap).toBe(healthWeight({ ok: false, failStreak: 6 }));
+    expect(cap).toBeGreaterThan(-70);
   });
 });

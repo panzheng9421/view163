@@ -20,7 +20,18 @@ import { Icon } from './icon';
  * 剧集点击 → /watch 路由（URL 携带定位参数，可分享、可后退）。
  */
 
-export function DetailModal({ item, onClose }: { item: SearchResultItem | null; onClose: () => void }) {
+export function DetailModal({
+  item,
+  alternatives = [],
+  onPickAlternative,
+  onClose,
+}: {
+  item: SearchResultItem | null;
+  /** 同组其他源条目：当前源详情无剧集时提供换源兜底（卡片按首选源单源直达时带下来） */
+  alternatives?: SearchResultItem[];
+  onPickAlternative?: (item: SearchResultItem) => void;
+  onClose: () => void;
+}) {
   const store = useAppStore();
   const router = useRouter();
   const { toast } = useToast();
@@ -124,7 +135,7 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/80 py-10 px-4 animate-fade-in"
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/70 backdrop-blur-sm py-10 px-4 animate-fade-in"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -132,7 +143,7 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="bg-surface-raised rounded-xl w-full max-w-3xl shadow-2xl animate-slide-up outline-none"
+        className="bg-surface-raised rounded-shell w-full max-w-3xl shadow-modal ring-1 ring-black/[0.06] dark:ring-white/10 animate-slide-up outline-none"
         role="dialog"
         aria-modal="true"
         aria-label={`${item.name} 详情`}
@@ -140,7 +151,6 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
         <div className="flex items-start justify-between gap-4 p-5 pb-3 border-b border-line">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-content break-words">{item.name}</h2>
-            <span className="text-sm text-faint">{item.sourceName}</span>
           </div>
           <button
             className="p-1.5 rounded-md text-muted hover:text-content hover:bg-hover shrink-0"
@@ -227,11 +237,37 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
                   </div>
                 </>
               ) : (
-                <EmptyState
-                  icon="alert"
-                  title="未找到播放资源"
-                  description="该视频可能暂时无法播放，请尝试其他视频"
-                />
+                <>
+                  <EmptyState
+                    icon="alert"
+                    title="未找到播放资源"
+                    description={
+                      alternatives.length > 0
+                        ? '当前来源暂无可播放的剧集，可换其他来源试试'
+                        : '该视频可能暂时无法播放，请尝试其他视频'
+                    }
+                  />
+                  {/* 首选源无剧集时的换源兜底：点击直接切换到该源的详情（父组件换 item 后自动重拉） */}
+                  {alternatives.length > 0 && onPickAlternative && (
+                    <div className="mt-3">
+                      <p className="text-xs text-faint mb-2">换个源试试：</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {alternatives.map((alt) => (
+                          <button
+                            key={`${alt.sourceKey}_${alt.vodId}`}
+                            className="btn-ghost btn-sm"
+                            onClick={() => onPickAlternative(alt)}
+                          >
+                            {alt.sourceName}
+                            {alt.remarks && (
+                              <span className="text-faint ml-1">{alt.remarks}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}

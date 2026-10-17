@@ -1,16 +1,20 @@
 import type { DoubanItem } from './types';
 import { fetchUpstream, getCache, setCache } from './fetch-utils';
+import { fetchDoubanRank, fetchDoubanRankPage, isDoubanRankId } from './douban-rank';
 
 /**
- * 影视热榜聚合（经 60s API，免 key，https://github.com/vikiboss/60s）。
- * 豆瓣周榜走其 rexxar 移动端接口（需伪装 iPhone UA），百度热播剧榜解析 top.baidu.com，
- * 均由 60s 代为抓取；这里只做服务端转发 + 内存缓存 + 字段归一。
- * 默认走社区实例 crystelf.top，失败自动回退官方公共实例（每日额度有限，
+ * 影视热榜聚合，两个来源：
+ * 1) 60s API（免 key，https://github.com/vikiboss/60s）：豆瓣五个一周口碑榜 +
+ *    百度热播剧榜，均由其代为抓取；
+ * 2) 豆瓣官方 rexxar 移动端直连（见 douban-rank.ts）：高分经典 Top250 /
+ *    热播剧集等完整榜单。
+ * 本文件负责统一入口：服务端转发 + 内存缓存 + 字段归一。
+ * 60s 默认走社区实例 crystelf.top，失败自动回退官方公共实例（每日额度有限，
  * 数据中心出口 IP 常被限流，Vercel 上不可依赖）；可用 60S_API_BASE 指向自部署实例。
  */
 
 const CACHE_TTL = 60 * 60 * 1000;
-const UA = 'LibreTV (+https://github.com/LibreSpark/LibreTV)';
+const UA = 'view163';
 
 const FALLBACK_BASE = 'https://60s.viki.moe';
 
@@ -18,7 +22,7 @@ function apiBase(): string {
   return (process.env['60S_API_BASE'] || 'https://60s.crystelf.top').replace(/\/+$/, '');
 }
 
-/** 榜单标识：豆瓣五个周榜 + 百度热播剧榜 */
+/** 榜单标识：豆瓣五个周榜 + 百度热播剧榜（60s 转发）+ 豆瓣直连榜单（Top250/热播剧集） */
 export const HOT_LIST_IDS = [
   'douban_movie_weekly',
   'douban_tv_chinese',
@@ -26,6 +30,9 @@ export const HOT_LIST_IDS = [
   'douban_show_chinese',
   'douban_show_global',
   'baidu_teleplay',
+  'douban_top250',
+  'douban_tv_hot',
+  'douban_movie_score',
 ] as const;
 
 export type HotListId = (typeof HOT_LIST_IDS)[number];
@@ -116,6 +123,9 @@ async function fetchJson(path: string): Promise<unknown> {
 }
 
 export async function fetchHotList(id: HotListId): Promise<DoubanItem[]> {
+  // 豆瓣直连榜单（Top250 / 热播剧集）走独立链路，不经过 60s
+  if (isDoubanRankId(id)) return fetchDoubanRank(id);
+
   const cacheKey = `hot-list:${id}`;
   const cached = getCache<DoubanItem[]>(cacheKey);
   if (cached) return cached;
@@ -140,4 +150,18 @@ export async function fetchHotList(id: HotListId): Promise<DoubanItem[]> {
 
   setCache(cacheKey, items, CACHE_TTL);
   return items;
+}
+
+/**
+ * 分页版（「查看更多」全部页使用）：直连榜单从全量切片；
+ * 60s 周榜单本身只有 10 条且无翻页能力，start/count 忽略、一次性返回全量。
+ */
+export async function fetchHotListPage(
+  id: HotListId,
+  start: number,
+  count: number
+): Promise<{ items: DoubanItem[]; total: number }> {
+  if (isDoubanRankId(id)) return fetchDoubanRankPage(id, start, count);
+  const items = await fetchHotList(id);
+  return { items: items.slice(start, start + count), total: items.length };
 }

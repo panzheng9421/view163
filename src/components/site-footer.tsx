@@ -1,109 +1,69 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/components/auth';
+import { CATEGORY_ORDER, CATEGORY_TO_SLUG } from '@/lib/categories';
 
-/** 上游仓库最新 tag（即最新版本号），用于页脚的更新检测 */
-const UPSTREAM_TAGS_API = 'https://api.github.com/repos/LibreSpark/LibreTV/tags?per_page=1';
-
-/** 页脚版本号的更新检测结果；null 表示无需检测（本地 dev 构建） */
-type UpstreamUpdate = { status: 'checking' | 'latest' | 'newer'; latest?: string };
-
-/** 点分版本号比较：a 大于 b 返回正数 */
-function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
-  const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const diff = (pa[i] || 0) - (pb[i] || 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
-
-/** 检测上游是否有更新的版本；检测失败或本地构建（dev）时静默返回 null */
-function useUpstreamUpdate(current: string | null): UpstreamUpdate | null {
-  const [state, setState] = useState<UpstreamUpdate | null>({ status: 'checking' });
-  useEffect(() => {
-    if (!current || current === 'dev') {
-      setState(null);
-      return;
-    }
-    // 按当前版本隔离缓存到 sessionStorage：一次会话最多请求一次 GitHub API
-    const cacheKey = `upstream-latest-tag:${current}`;
-    const cached = sessionStorage.getItem(cacheKey);
-    if (cached) {
-      setState(
-        compareVersions(cached, current) > 0
-          ? { status: 'newer', latest: cached }
-          : { status: 'latest' },
-      );
-      return;
-    }
-    let alive = true;
-    fetch(UPSTREAM_TAGS_API)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((tags: { name?: string }[]) => {
-        const name = tags[0]?.name?.replace(/^v/, '');
-        if (!name || !alive) return;
-        try {
-          sessionStorage.setItem(cacheKey, name);
-        } catch {
-          /* 隐私模式等场景下缓存不可写，忽略即可 */
-        }
-        setState(
-          compareVersions(name, current) > 0
-            ? { status: 'newer', latest: name }
-            : { status: 'latest' },
-        );
-      })
-      .catch(() => {
-        /* 网络受限 / 触发 GitHub 限流时静默跳过 */
-        if (alive) setState(null);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [current]);
-  return state;
-}
-
-/** 页脚仓库链接上的悬停提示：显示更新检测结果 */
-function UpdateTip({ update }: { update: UpstreamUpdate | null }) {
-  const tip =
-    update === null
-      ? null
-      : update.status === 'newer'
-        ? `发现新版本 v${update.latest}`
-        : update.status === 'latest'
-          ? '已是最新版本'
-          : '正在检测更新…';
-  if (!tip) return null;
-  return (
-    <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-line bg-chip px-2 py-1 text-faint shadow-sm group-hover:block">
-      {tip}
-    </span>
-  );
-}
-
-/** 全站统一页脚：仓库链接 + 版本号（悬停显示上游更新检测结果） */
+/**
+ * 全站统一页脚：三列 Editorial 版式（品牌 / 导航 / 协议）。
+ * 上游的 GitHub 链接与版本检测已移除，版本号保留。
+ */
 export function SiteFooter() {
   const { version } = useAuth();
-  const upstreamUpdate = useUpstreamUpdate(version);
   return (
-    <footer className="border-t border-line py-4">
-      <p className="text-center text-xs text-faint">
-        <a
-          href="https://github.com/LibreSpark/LibreTV"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group relative inline-block cursor-help hover:text-accent"
-        >
-          LibreTV{version ? ` v${version}` : ''}
-          {version && <UpdateTip update={upstreamUpdate} />}
-        </a>
-        {' · '}
-        AGPL-3.0 License
-      </p>
+    <footer className="border-t border-black/[0.08] dark:border-white/10 py-12">
+      <div className="max-w-shell mx-auto px-5 md:px-8 grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-6">
+        <div className="md:col-span-5">
+          <div className="flex items-center gap-2">
+            <span
+              aria-hidden
+              className="inline-flex items-center justify-center w-7 h-7 rounded-tile"
+              style={{ background: 'linear-gradient(135deg, #00b8e6 0%, #0aa8d2 52%, #17bde4 100%)' }}
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="#ffffff">
+                <path d="M8.5 5.4v13.2c0 .62.68 1 1.2.67l10.2-6.6a.79.79 0 0 0 0-1.34L9.7 4.73A.79.79 0 0 0 8.5 5.4Z" />
+              </svg>
+            </span>
+            <span className="text-lg font-display font-bold tracking-[-0.02em] leading-none brand-gradient">
+              view163
+            </span>
+          </div>
+          <p className="mt-3 text-sm text-muted max-w-sm leading-relaxed">
+            聚合全网影视资源，免费在线搜索与观看。本站不存储任何视频内容，仅提供信息索引。
+          </p>
+        </div>
+
+        <nav className="md:col-span-4">
+          <p className="eyebrow w-fit mb-3">浏览</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 max-w-[17rem]">
+            <Link href="/" className="text-sm text-muted hover:text-content transition-colors duration-700 ease-swift">
+              首页
+            </Link>
+            {CATEGORY_ORDER.map((cat) => (
+              <Link
+                key={cat}
+                href={`/category/${CATEGORY_TO_SLUG[cat]}`}
+                className="text-sm text-muted hover:text-content transition-colors duration-700 ease-swift"
+              >
+                {cat}
+              </Link>
+            ))}
+            <Link
+              href="/about"
+              className="text-sm text-muted hover:text-content transition-colors duration-700 ease-swift"
+            >
+              关于
+            </Link>
+          </div>
+        </nav>
+
+        <div className="md:col-span-3 flex flex-col gap-2 md:items-end md:text-right">
+          <p className="eyebrow w-fit">关于</p>
+          <p className="text-sm text-muted">AGPL-3.0 License</p>
+          {version && <p className="text-sm text-faint num">v{version}</p>}
+          <p className="text-xs text-faint mt-2">内容版权归原权利人所有</p>
+        </div>
+      </div>
     </footer>
   );
 }
