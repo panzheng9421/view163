@@ -244,10 +244,10 @@ function CategoryContent() {
                 key={s.name}
                 onClick={() => switchSub(s.name)}
                 className={cn(
-                  'px-3 py-1.5 rounded-full text-sm transition-colors',
+                  'px-3 py-1.5 rounded-full text-sm border transition-colors',
                   currentSub?.name === s.name
-                    ? 'bg-accent text-on-accent'
-                    : 'bg-chip text-muted hover:text-content hover:bg-hover'
+                    ? 'border-accent bg-accent/15 text-accent'
+                    : 'border-line bg-surface/60 text-muted hover:text-content hover:border-accent'
                 )}
               >
                 {s.name}
@@ -322,11 +322,11 @@ function CategoryContent() {
                 </span>
               )}
             </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 items-start">
-                {groups.map((g) => (
-                  <AggregatedCard key={g.key} group={g} onOpen={setDetailItem} showType={false} />
-                ))}
-              </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 items-start">
+              {groups.map((g) => (
+                <AggregatedCard key={g.key} group={g} onOpen={setDetailItem} showType={false} />
+              ))}
+            </div>
 
             {/* 上拉加载：哨兵自动续页 + 按钮兜底 */}
             <div ref={sentinelRef} className="h-4" aria-hidden />

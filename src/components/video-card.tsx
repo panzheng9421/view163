@@ -8,13 +8,6 @@ import { SmartImage } from './smart-image';
 
 // —— 跨源同名聚合 ——
 
-/**
- * 首选源域名（用户 2026-10-17 定：「这里就显示一个暴风就行了，暴风不能用再显示其他的」）：
- * 聚合卡片默认只出首选源的条目——有收录 → 点击直达其详情，不展开多源选择；
- * 首选源没收录这部片 → 保留全部条目走多源选择。
- */
-const PRIMARY_SOURCE_DOMAIN = 'bfzyapi.com';
-
 export interface AggregatedGroup {
   key: string;
   name: string;
@@ -85,11 +78,20 @@ function hashSeed(s: string): number {
 }
 
 /**
- * 聚合影片卡片（竖版海报卡，对齐主流影视站样式，用户 2026-10-17 拍板）：
+ * 首选源域名（用户 2026-10-17 定：「这里就显示一个暴风就行了，暴风不能用再显示其他的」）：
+ * 聚合卡片默认只出首选源的条目——有收录 → 点击直达其详情，不展开多源选择；
+ * 首选源没收录这部片 → 保留全部条目走多源选择。
+ * 按域名认源而非 env_N 下标：预置源增删/重排序后下标会漂，域名不会；
+ * 首选源被用户整体删掉时自动回退为纯多源选择（优雅降级）。
+ */
+const PRIMARY_SOURCE_DOMAIN = 'bfzyapi.com';
+
+/**
+ * 聚合影片卡片（竖版海报卡，对齐主流影视站样式）：
  * - 海报占满卡片宽度（2:3），左上角年份、右下角评分叠加在图上；
  * - 海报下方：标题 + 演员 + 类型胶囊 + 更新状态；
- * - 首选源（暴风）有收录 → 单源卡：点击海报区直接打开该源详情（不带「N 源」徽章）；
- *   没收录 → 多源卡：显示「N 源」徽章，点海报区展开各源列表选源播放。
+ * - 首选源（暴风）有收录 → 单源卡：点击直接打开该源详情（不带「N 源」徽章）；
+ *   没收录 → 多源卡：显示「N 源」徽章，点击展开各源列表选源播放。
  * onOpen 第二参数传同组其他源条目：首选源详情无剧集时，详情弹窗据此提供换源兜底。
  */
 export function AggregatedCard({
@@ -108,8 +110,7 @@ export function AggregatedCard({
   const [expanded, setExpanded] = useState(false);
   const showImg = !!group.pic && !imgFailed;
 
-  // 首选源有收录 → 卡片只留它（单源直达）；没收录 → 全部条目走多源选择。
-  // 按域名认源而非 env_N 下标：预置源增删/重排序后下标会漂，域名不会。
+  // 首选源有收录 → 卡片只留它（单源直达）；没收录 → 全部条目走多源选择
   const items = useMemo(() => {
     const primary = group.items.find((i) => (i.sourceUrl || '').includes(PRIMARY_SOURCE_DOMAIN));
     return primary ? [primary] : group.items;
@@ -146,7 +147,13 @@ export function AggregatedCard({
   };
 
   return (
-    <div className={cn('card flex h-full flex-col', multi && expanded && 'ring-1 ring-accent/40')}>
+    <div
+      className={cn(
+        'card flex flex-col overflow-hidden',
+        !multi && 'hover:scale-[1.02] hover:shadow-md',
+        multi && expanded && 'ring-1 ring-accent/40'
+      )}
+    >
       {/* 海报区才是点击热区（文字区不触发打开，避免误触——与腾讯一致） */}
       <div
         className="relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60"
@@ -181,52 +188,48 @@ export function AggregatedCard({
         )}
 
         {/* 底部渐变：压暗海报下缘，保证叠加白字可读 */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-black/70 to-transparent" />
 
         {/* 左上角：年份 */}
         {group.year && (
-          <span
-            className="absolute top-1.5 left-1.5 text-xs font-medium text-white"
-            style={{ textShadow: '0 1px 4px rgb(0 0 0 / 0.8)' }}
-          >
+          <span className="absolute top-1.5 left-1.5 text-[11px] font-medium text-white [text-shadow:0_1px_4px_rgb(0_0_0/80%)]">
             {group.year}
           </span>
         )}
 
-        {/* 右上角：多源数量徽章（只写数量，不出现源名） */}
+        {/* 右上角：多源数量徽章 */}
         {multi && (
-          <span
-            className="absolute top-1.5 right-1.5 text-xs font-medium text-accent"
-            style={{ textShadow: '0 1px 4px rgb(0 0 0 / 0.8)' }}
-          >
-            {items.length} 源
+          <span className="absolute top-1.5 right-1.5 tag bg-black/70 text-accent font-medium">
+            {group.items.length} 源
           </span>
         )}
 
         {/* 右下角：评分（统一一位小数，对齐主流影视站） */}
+        {/* 右下角：评分 */}
         <span
           className={cn(
-            'absolute bottom-1.5 right-1.5 text-xs text-white',
+            'absolute bottom-1.5 right-1.5 text-[11px] text-white [text-shadow:0_1px_4px_rgb(0_0_0/80%)]',
             scoreLabel === '暂无评分' ? 'font-normal opacity-75' : 'font-bold'
           )}
-          style={{ textShadow: '0 1px 4px rgb(0 0 0 / 0.8)' }}
         >
           {scoreLabel}
         </span>
       </div>
 
       {/* 文字区：标题 + 演员 + 类型胶囊(可选) + 更新状态 */}
-      <div className="flex flex-col flex-grow min-w-0 p-2.5">
-        <h3 className="font-semibold text-sm text-content mb-1 line-clamp-2" title={group.name}>
+      <div className="flex flex-col flex-grow min-w-0 p-2">
+        <h3 className="font-semibold text-sm text-content line-clamp-2" title={group.name}>
           {group.name}
         </h3>
         {/* 演员行：无演员时保留等高空行（h-4），保证网格内多卡的文字行位置对齐 */}
-        <p className="text-xs text-muted truncate h-4" title={actorNames.join(' / ')}>
+        <p className="mt-0.5 text-[11px] text-muted truncate h-4" title={actorNames.join(' / ')}>
           {actorNames.join(' / ')}
         </p>
         {(showType && group.typeName) || adult ? (
           <div className="flex flex-wrap items-center gap-1 mt-1">
-            {showType && group.typeName && <span className="tag bg-accent/15 text-accent">{group.typeName}</span>}
+            {showType && group.typeName && (
+              <span className="tag bg-accent/15 text-accent">{group.typeName}</span>
+            )}
             {adult && <span className="tag bg-pink-500/15 text-pink-600 dark:text-pink-400">(18+)</span>}
           </div>
         ) : null}
@@ -241,7 +244,7 @@ export function AggregatedCard({
         <div className="border-t border-line p-2.5 animate-fade-in">
           <p className="text-[10px] text-faint mb-1.5">选择来源播放</p>
           <div className="flex flex-wrap gap-1.5">
-            {items.map((item) => (
+            {items.map((item, i) => (
               <button
                 key={`${item.sourceKey}_${item.vodId}`}
                 className={cn(
@@ -327,9 +330,6 @@ export function VideoCard({ item, onClick }: { item: SearchResultItem; onClick: 
               {item.year && <span className="tag bg-purple-500/15 text-purple-600 dark:text-purple-300">{item.year}</span>}
             </div>
             <p className="text-xs text-muted line-clamp-2 mb-2">{item.remarks || '暂无介绍'}</p>
-          </div>
-          <div className="flex items-center justify-between mt-auto pt-1.5 border-t border-line">
-            <span className="tag bg-chip text-muted truncate max-w-[80%]">{item.sourceName}</span>
           </div>
         </div>
       </div>

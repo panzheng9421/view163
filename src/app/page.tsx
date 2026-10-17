@@ -65,7 +65,7 @@ function HotKeywordPill({
   });
   const title = query.data?.items?.[0]?.title;
   if (query.isLoading) {
-    return <span className="inline-block h-9 w-20 rounded-full bg-chip animate-pulse" />;
+    return <span className="h-8 w-20 rounded-full bg-surface/60 border border-line animate-pulse" />;
   }
   if (!title) return null;
   return (
@@ -73,7 +73,7 @@ function HotKeywordPill({
       type="button"
       title={title}
       onClick={() => onPick(title)}
-      className="max-w-[10rem] px-4 py-1.5 rounded-full text-sm bg-chip text-muted transition-colors hover:text-accent"
+      className="max-w-[10rem] px-3 py-1.5 rounded-full text-sm bg-surface/60 backdrop-blur border border-line text-muted hover:text-content hover:border-accent transition-colors"
     >
       <span className="block truncate">{title}</span>
     </button>
@@ -209,127 +209,137 @@ function HomeContent() {
   const visibleGroups = useMemo(() => groups.slice(0, visibleCount), [groups, visibleCount]);
   useEffect(() => setVisibleCount(RESULT_PAGE_SIZE), [groups]);
 
-  /*
-   * 搜索胶囊（旧版规格）：输入框与搜索按钮合并为一个圆角矩形，
-   * 内部无边框，焦点态由容器统一表达；下拉展开时改为「上圆下直」，
-   * 与下方浮层拼成同一个面板。
-   */
-  const searchBox = (
-    <div ref={searchHistory.containerRef} className="relative w-full max-w-2xl">
-      <form
-        className="w-full"
-        onSubmit={(e) => {
-          e.preventDefault();
-          runSearch(input);
-        }}
-      >
-        <div
-          className={cn(
-            'flex items-stretch min-h-12 pl-4 border',
-            'transition-[background-color,border-color,border-radius] duration-200',
-            searchHistory.visible
-              ? // 展开时：外框（含上圆角）沿用输入框的聚焦样式不变，只把底边改为内部分隔线，
-                // 使输入区在展开状态下仍是边界清晰的独立输入框，而非与列表糊成一片
-                'rounded-t-xl rounded-b-none border-accent border-b-line bg-surface-raised'
-              : 'rounded-xl border-line bg-chip focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/40'
-          )}
-        >
-          <input
-            ref={inputRef}
-            className="flex-1 min-w-0 pr-2 bg-transparent text-sm text-content placeholder:text-faint focus:outline-none"
-            placeholder="输入影片名称..."
-            value={input}
-            maxLength={100}
-            onChange={(e) => {
-              setInput(e.target.value);
-              searchHistory.resetActive();
-            }}
-            onFocus={searchHistory.onFocus}
-            onKeyDown={(e) => searchHistory.onKeyDown(e, pickHistory)}
-            role="combobox"
-            aria-label="搜索影片"
-            aria-expanded={searchHistory.visible}
-            aria-controls="home-search-history"
-            aria-autocomplete="list"
-            aria-activedescendant={
-              searchHistory.visible && searchHistory.activeIndex >= 0
-                ? `home-search-history-${searchHistory.activeIndex}`
-                : undefined
-            }
-          />
-          {input && (
-            <button
-              type="button"
-              className="shrink-0 self-center mr-1 p-1.5 rounded-full text-faint hover:text-content hover:bg-hover transition-colors"
-              onClick={() => {
-                setInput('');
-                searchHistory.resetActive();
-                inputRef.current?.focus();
-              }}
-              aria-label="清空"
-            >
-              <Icon name="close" className="w-4 h-4" />
-            </button>
-          )}
-          {/* 主操作按钮：贴合搜索框右端——右侧圆角跟随容器、左侧直角，展开时右下角
-              跟着容器一起改直角；按压改用亮度反馈（缩放会让贴合边缘露出缝隙） */}
-          <button
-            type="submit"
-            className={cn(
-              'btn-primary shrink-0 px-4 font-medium transition-[background-color,filter] active:brightness-90',
-              '!rounded-l-none',
-              searchHistory.visible ? '!rounded-tr-xl !rounded-br-none' : '!rounded-r-xl'
-            )}
-          >
-            <Icon name="search" className="w-4 h-4" />
-            搜索
-          </button>
-        </div>
-      </form>
-
-      {/* 最近搜索：与输入框无缝拼接；浮层不占文档流，出现/消失不会顶动下方内容 */}
-      {searchHistory.visible && (
-        <SearchHistoryDropdown
-          id="home-search-history"
-          matches={searchHistory.matches}
-          activeIndex={searchHistory.activeIndex}
-          onPick={pickHistory}
-          onRemove={searchHistory.remove}
-          onClearAll={searchHistory.clearAll}
-        />
-      )}
-    </div>
-  );
-
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
 
       <main className="relative flex-1 max-w-[1440px] w-full mx-auto px-4 py-6">
-        {/* 首屏氛围渐变 */}
+        {/* 首屏氛围：多层光斑 mesh 渐变，营造影院沉浸感（纯 CSS，不依赖外部图） */}
         {!urlQuery && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-0 h-[420px] -z-10"
-            style={{
-              background:
-                'radial-gradient(60% 60% at 50% 0%, rgba(35,173,229,0.10) 0%, rgba(35,173,229,0.03) 45%, transparent 75%)',
-            }}
-          />
+          <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[600px] -z-10 overflow-hidden">
+            <div
+              className="absolute -top-40 left-1/2 -translate-x-1/2 w-[820px] h-[820px] rounded-full opacity-30 blur-3xl"
+              style={{ background: 'radial-gradient(circle, rgba(0,204,255,0.35), transparent 60%)' }}
+            />
+            <div
+              className="absolute top-0 left-1/4 w-[520px] h-[520px] rounded-full opacity-25 blur-3xl"
+              style={{ background: 'radial-gradient(circle, rgba(168,85,247,0.40), transparent 60%)' }}
+            />
+            <div
+              className="absolute top-4 right-1/4 w-[600px] h-[600px] rounded-full opacity-20 blur-3xl"
+              style={{ background: 'radial-gradient(circle, rgba(255,60,120,0.30), transparent 60%)' }}
+            />
+            <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-[rgb(var(--c-page))]" />
+          </div>
         )}
 
         {/* 搜索区 */}
-        <section className={cn('flex flex-col items-center', urlQuery ? 'mb-6' : 'mt-8 mb-8')}>
+        <section className={cn('flex flex-col items-center', urlQuery ? 'mb-6' : 'mt-16 mb-10')}>
           {!urlQuery && (
-            <header className="text-center mb-6">
-              <h1 className="text-4xl sm:text-5xl font-bold brand-gradient">view163</h1>
+            <header className="text-center mb-8">
+              <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight leading-none mb-4">
+                <span className="brand-gradient">view163</span>
+              </h1>
+              <p className="text-sm sm:text-base text-muted max-w-md mx-auto">
+                免费搜索 · 聚合海量影视 · 即点即看，无需注册
+              </p>
             </header>
           )}
           {urlQuery && <h1 className="sr-only">view163 视频搜索</h1>}
-          {searchBox}
-          {/* 热门搜索词：各榜单榜首真片名（无搜索时才占首屏位置） */}
+          {/* 定位容器比胶囊宽一圈：浮层按它的宽度对齐，接缝处不会与胶囊边框错位 1px */}
+          <div ref={searchHistory.containerRef} className="relative w-full max-w-2xl">
+            <form
+              className="w-full"
+              onSubmit={(e) => {
+                e.preventDefault();
+                runSearch(input);
+              }}
+            >
+              {/* 输入框与搜索按钮合并为一个胶囊：内部无边框，焦点态由容器统一表达；
+                  下拉展开时改为「上圆下直」并隐去底边，与下方浮层拼成同一个面板 */}
+              <div
+                className={cn(
+                  // 12px 圆角矩形（非胶囊）：收起态与展开态共用同一组上圆角，
+                  // 展开时输入框这部分形状完全不发生变化，上下圆角也与下拉保持一致；
+                  // 右侧与上下不留内边距，由搜索按钮拉伸填满、与搜索框边缘贴合
+                  'flex items-stretch min-h-12 pl-4 border',
+                  'transition-[background-color,border-color,border-radius] duration-200',
+                  searchHistory.visible
+                    ? // 展开时：外框（含上圆角）沿用输入框的聚焦样式不变，只把底边改为内部分隔线，
+                      // 使输入区在展开状态下仍是边界清晰的独立输入框，而非与列表糊成一片
+                      'rounded-t-xl rounded-b-none border-accent border-b-line bg-surface-raised'
+                    : 'rounded-xl border-line bg-chip focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/40'
+                )}
+              >
+                <input
+                  ref={inputRef}
+                  className="flex-1 min-w-0 pr-2 bg-transparent text-sm text-content placeholder:text-faint focus:outline-none"
+                  placeholder="输入影片名称..."
+                  value={input}
+                  maxLength={100}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    searchHistory.resetActive();
+                  }}
+                  onFocus={searchHistory.onFocus}
+                  onKeyDown={(e) => searchHistory.onKeyDown(e, pickHistory)}
+                  role="combobox"
+                  aria-label="搜索影片"
+                  aria-expanded={searchHistory.visible}
+                  aria-controls="home-search-history"
+                  aria-autocomplete="list"
+                  aria-activedescendant={
+                    searchHistory.visible && searchHistory.activeIndex >= 0
+                      ? `home-search-history-${searchHistory.activeIndex}`
+                      : undefined
+                  }
+                />
+                {input && (
+                  <button
+                    type="button"
+                    className="shrink-0 self-center mr-1 p-1.5 rounded-full text-faint hover:text-content hover:bg-hover transition-colors"
+                    onClick={() => {
+                      setInput('');
+                      searchHistory.resetActive();
+                      inputRef.current?.focus();
+                    }}
+                    aria-label="清空"
+                  >
+                    <Icon name="close" className="w-4 h-4" />
+                  </button>
+                )}
+                {/* 主操作按钮：贴合搜索框右端——右侧圆角跟随容器、左侧直角，展开时右下角
+                    跟着容器一起改直角；按压改用亮度反馈（缩放会让贴合边缘露出缝隙） */}
+                <button
+                  type="submit"
+                  className={cn(
+                    'btn-primary shrink-0 px-4 font-medium transition-[background-color,filter] active:brightness-90',
+                    '!rounded-l-none',
+                    searchHistory.visible ? '!rounded-tr-xl !rounded-br-none' : '!rounded-r-xl'
+                  )}
+                >
+                  <Icon name="search" className="w-4 h-4" />
+                  搜索
+                </button>
+              </div>
+            </form>
+
+            {/* 最近搜索：与输入框无缝拼接；浮层不占文档流，出现/消失不会顶动下方内容 */}
+            {searchHistory.visible && (
+              <SearchHistoryDropdown
+                id="home-search-history"
+                matches={searchHistory.matches}
+                activeIndex={searchHistory.activeIndex}
+                onPick={pickHistory}
+                onRemove={searchHistory.remove}
+                onClearAll={searchHistory.clearAll}
+              />
+            )}
+          </div>
+
           {!urlQuery && (
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+              <span className="text-xs text-faint mr-1">热门搜索</span>
               {HOT_KEYWORD_SOURCES.map((config) => (
                 <HotKeywordPill key={config.key} config={config} onPick={runSearch} />
               ))}
@@ -416,14 +426,16 @@ function HomeContent() {
           </section>
         )}
 
-        {/* 首页推荐（有搜索时隐藏） */}
+        {/* 首页推荐（有搜索时隐藏）：按分类横向滑轨分区 */}
         {!urlQuery && (
-          <RecommendSection
-            onPick={(title) => {
-              setInput(title);
-              runSearch(title);
-            }}
-          />
+          <div className="mt-14">
+            <RecommendSection
+              onPick={(title) => {
+                setInput(title);
+                runSearch(title);
+              }}
+            />
+          </div>
         )}
       </main>
 
@@ -447,15 +459,14 @@ function HomeContent() {
 
 function ResultsSkeleton() {
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3 items-start">
+    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
       {Array.from({ length: 12 }).map((_, i) => (
         // 结构对齐真实结果卡（竖版海报 + 文字块），避免占位与真实卡片形状不符
-        <div key={i} className="card flex flex-col overflow-hidden">
+        <div key={i} className="card overflow-hidden">
           <div className="aspect-[2/3] bg-chip animate-pulse" />
-          <div className="p-2.5 space-y-2">
+          <div className="p-2 space-y-2">
             <div className="h-4 w-3/4 rounded bg-chip animate-pulse" />
             <div className="h-3 w-1/2 rounded bg-chip animate-pulse" />
-            <div className="h-3 w-full rounded bg-chip animate-pulse" />
           </div>
         </div>
       ))}

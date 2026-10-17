@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { ThemeToggle } from './theme';
 import { SourceManagerDrawer } from './source-manager';
@@ -12,7 +12,7 @@ import { SearchHistoryDropdown, useSearchHistory } from './search-history';
 import { cn } from '@/lib/utils';
 import { CATEGORY_ORDER, CATEGORY_TO_SLUG } from '@/lib/categories';
 
-/** 顶部导航：Logo、分类导航、搜索框（首页外）、历史、设置 */
+/** 顶部导航：Logo、搜索框（首页外）、历史、设置 */
 export function Header({ showSearch = false }: { showSearch?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -20,13 +20,9 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
   const activeCatSlug = pathname.startsWith('/category/') ? pathname.split('/')[2] : null;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
   // 与首页搜索框共用同一套「最近搜索」下拉逻辑
   const searchHistory = useSearchHistory(query);
-
-  // 路由变化后收起移动端菜单
-  useEffect(() => setMenuOpen(false), [pathname]);
 
   const submitSearch = (text: string) => {
     const q = text.trim().slice(0, 100);
@@ -46,16 +42,28 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
     <>
       <header className="sticky top-0 z-40 bg-surface/90 backdrop-blur border-b border-line">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
-          <Link href="/" aria-label="view163 首页" className="flex items-center shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icons/icon-512.png" alt="view163" className="w-7 h-7 rounded-lg" />
+          <Link href="/" aria-label="view163 首页" className="flex items-center gap-2 shrink-0">
+            {/* 品牌图标：圆角方盒 + 播放三角，与首页 hero 同一套渐变 */}
+            <span
+              aria-hidden
+              className="inline-flex items-center justify-center w-7 h-7 rounded-lg"
+              style={{ background: 'linear-gradient(135deg, #00ccff 0%, #7c3aed 52%, #ff3c78 100%)' }}
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="#ffffff">
+                <path d="M8.5 5.4v13.2c0 .62.68 1 1.2.67l10.2-6.6a.79.79 0 0 0 0-1.34L9.7 4.73A.79.79 0 0 0 8.5 5.4Z" />
+              </svg>
+            </span>
+            <span className="hidden sm:inline text-lg font-extrabold tracking-tight leading-none brand-gradient">
+              view163
+            </span>
           </Link>
 
-          {/* 主导航：一级分类平铺，点击进入 /category/<slug>，由分类页渲染二级子类 */}
-          <nav className="hidden md:flex items-center gap-0.5">
+          {/* 主导航：与工具图标分组，置于品牌区右侧 */}
+          <nav className="hidden md:flex items-center gap-0.5 ml-1">
             <HeaderLink href="/" active={pathname === '/'}>
               首页
             </HeaderLink>
+            {/* 一级分类平铺：点击进入 /category/<slug>，由分类页渲染二级子类 */}
             {CATEGORY_ORDER.map((cat) => {
               const slug = CATEGORY_TO_SLUG[cat];
               return (
@@ -122,6 +130,13 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
           <div className="flex-1 sm:hidden" />
 
           <nav className="flex items-center gap-1 ml-auto">
+            {/* 窄屏回退：主导航在 md 以下隐藏，关于入口在右侧保留（首页点 logo） */}
+            <div className="flex md:hidden items-center gap-0.5">
+              <HeaderLink href="/about" active={pathname === '/about'}>
+                关于
+              </HeaderLink>
+            </div>
+            <span className="hidden md:block w-px h-5 bg-line mx-1" />
             <ThemeToggle />
             <IconButton label="观看历史" onClick={() => setHistoryOpen(true)}>
               <Icon name="clock" />
@@ -132,32 +147,11 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
             <IconButton label="设置" onClick={() => setSettingsOpen(true)}>
               <Icon name="gear" />
             </IconButton>
-            {/* 窄屏：主导航在 md 以下收进汉堡菜单（分类另走下方横滑条，一滑即达） */}
-            <button
-              className="md:hidden p-2 rounded-md text-muted hover:text-content hover:bg-hover transition-colors"
-              aria-label="打开菜单"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((v) => !v)}
-            >
-              <span className="relative block w-5 h-3">
-                <span
-                  className={cn(
-                    'absolute left-0 top-0 block h-px w-5 bg-content transition-transform',
-                    menuOpen ? 'translate-y-[6px] rotate-45' : 'translate-y-[1px]'
-                  )}
-                />
-                <span
-                  className={cn(
-                    'absolute left-0 bottom-0 block h-px w-5 bg-content transition-transform',
-                    menuOpen ? '-translate-y-[6px] -rotate-45' : '-translate-y-[1px]'
-                  )}
-                />
-              </span>
-            </button>
           </nav>
         </div>
 
-        {/* 手机端分类条：主导航在 md 以下收起，分类入口不能没有——第二行横滑，当前项高亮 */}
+        {/* 手机端顶部分类条：主导航在 md 以下整体隐藏，分类入口不能没有——
+            第二行横滑（首页 + 四个一级分类），当前项高亮；桌面端不显示 */}
         <div className="md:hidden border-t border-line">
           <div className="max-w-6xl mx-auto px-4 h-11 flex items-center gap-1 overflow-x-auto scrollbar-thin [&>a]:shrink-0">
             <HeaderLink href="/" active={pathname === '/'}>
@@ -175,31 +169,6 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
         </div>
       </header>
 
-      {/* 移动端菜单 */}
-      {menuOpen && (
-        <div className="md:hidden fixed inset-0 z-[60]">
-          <div
-            className="absolute inset-0 bg-black/70 animate-fade-in"
-            onClick={() => setMenuOpen(false)}
-            aria-hidden
-          />
-          <nav className="relative h-full flex flex-col items-start justify-center gap-2 px-8">
-            {[
-              { href: '/', label: '首页' },
-              { href: '/about', label: '关于' },
-            ].map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="text-2xl font-semibold text-content"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      )}
-
       <SourceManagerDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </>
@@ -211,7 +180,7 @@ function HeaderLink({ href, active, children }: { href: string; active: boolean;
     <Link
       href={href}
       className={cn(
-        'px-2.5 py-1.5 rounded-md text-sm transition-colors whitespace-nowrap',
+        'px-2.5 py-1.5 rounded-md text-sm transition-colors',
         active ? 'text-content bg-hover' : 'text-muted hover:text-content'
       )}
     >

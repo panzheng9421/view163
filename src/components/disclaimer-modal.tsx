@@ -51,13 +51,17 @@ export function DisclaimerModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/80 py-10 px-4 animate-fade-in">
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 px-4 animate-fade-in"
+      role="presentation"
+    >
       <div
         ref={panelRef}
+        tabIndex={-1}
+        className="bg-surface-raised rounded-xl w-full max-w-lg shadow-2xl animate-slide-up outline-none"
         role="dialog"
         aria-modal="true"
         aria-label="使用声明"
-        className="relative bg-surface-raised rounded-xl w-full max-w-lg shadow-2xl animate-slide-up outline-none"
       >
         <div className="p-6">
           <h2 className="text-lg font-semibold text-content mb-3">使用声明</h2>

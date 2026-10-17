@@ -8,7 +8,7 @@ import { DoubanCard } from '@/components/video-card';
 import { Header } from '@/components/header';
 import { BackToTop } from '@/components/back-to-top';
 import { SiteFooter } from '@/components/site-footer';
-import { Spinner, PosterSkeleton } from '@/components/states';
+import { Spinner } from '@/components/states';
 import type { DoubanItem } from '@/lib/types';
 
 /** 每次上拉加载量：24 = 1 排 6 卡的整数倍（4 整行） */
@@ -87,35 +87,39 @@ function ExploreContent() {
     <div className="min-h-screen flex flex-col">
       <Header />
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 py-6">
-        <div className="flex items-center gap-3 pt-6">
+        <div className="flex items-center gap-3 mb-6">
           <button
             type="button"
             aria-label="返回"
             onClick={() => router.back()}
-            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-chip text-muted hover:text-content hover:bg-hover transition-colors"
+            className="inline-flex items-center justify-center w-8 h-8 rounded-full border border-line bg-surface text-muted hover:text-content hover:border-accent transition-colors"
           >
             <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 6l-6 6 6 6" />
             </svg>
           </button>
-          <h1 className="text-lg font-semibold text-content truncate">{conf!.title}</h1>
+          <h1 className="text-lg font-semibold text-content">{conf!.title}</h1>
         </div>
 
         {query.isError ? (
           <p className="text-sm text-faint py-16 text-center">内容加载失败，可稍后重试</p>
         ) : items.length === 0 && query.isLoading ? (
-          <PosterSkeleton count={18} />
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+            {Array.from({ length: 18 }).map((_, i) => (
+              <div key={i} className="aspect-[2/3] rounded-lg bg-chip animate-pulse" />
+            ))}
+          </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 items-start mt-6">
-                {items.map((item) => (
-                  <DoubanCard
-                    key={item.id}
-                    item={item}
-                    onClick={() => router.push(`/?s=${encodeURIComponent(item.title)}`, { scroll: false })}
-                  />
-                ))}
-              </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+              {items.map((item) => (
+                <DoubanCard
+                  key={item.id}
+                  item={item}
+                  onClick={() => router.push(`/?s=${encodeURIComponent(item.title)}`, { scroll: false })}
+                />
+              ))}
+            </div>
 
             <div ref={sentinelRef} className="h-4" aria-hidden />
 

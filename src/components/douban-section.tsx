@@ -219,9 +219,12 @@ function Rail({
   };
 
   return (
-      <section aria-label={title} className="mb-8">
+    <section aria-label={title} className="mb-8">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold text-content">{title}</h2>
+        <h2 className="text-base font-semibold text-content flex items-center gap-2">
+          <span className="inline-block w-1 h-4 rounded-full bg-gradient-to-b from-accent to-fuchsia-500" />
+          {title}
+        </h2>
         <div className="hidden sm:flex items-center gap-1">
           <RailArrow dir="left" disabled={!canLeft} onClick={() => page(-1)} />
           <RailArrow dir="right" disabled={!canRight} onClick={() => page(1)} />
@@ -250,7 +253,7 @@ function Rail({
               className="w-[108px] sm:w-[124px] shrink-0 snap-start group"
               aria-label={`${title} 查看更多`}
             >
-              <div className="aspect-[2/3] rounded-lg bg-chip flex flex-col items-center justify-center gap-2 hover:bg-hover">
+              <div className="aspect-[2/3] rounded-lg border border-dashed border-line bg-surface/60 flex flex-col items-center justify-center gap-2 transition-colors group-hover:border-accent group-hover:bg-chip">
                 <span className="text-sm text-muted group-hover:text-content">查看更多</span>
                 <svg viewBox="0 0 24 24" className="w-5 h-5 text-muted group-hover:text-accent" fill="none" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6l6 6-6 6" />
@@ -260,7 +263,7 @@ function Rail({
           )}
         </div>
       )}
-      </section>
+    </section>
   );
 }
 
@@ -272,8 +275,8 @@ function RailArrow({ dir, disabled, onClick }: { dir: 'left' | 'right'; disabled
       disabled={disabled}
       aria-label={dir === 'left' ? '向左滚动' : '向右滚动'}
       className={cn(
-        'inline-flex items-center justify-center w-7 h-7 rounded-full bg-chip text-muted transition-colors',
-        disabled ? 'opacity-40 cursor-not-allowed' : 'hover:text-content hover:bg-hover'
+        'inline-flex items-center justify-center w-7 h-7 rounded-full border border-line bg-surface text-muted transition-colors',
+        disabled ? 'opacity-40 cursor-not-allowed' : 'hover:text-content hover:border-accent'
       )}
     >
       <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor">
