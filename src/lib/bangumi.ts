@@ -1,5 +1,6 @@
 import type { DoubanItem } from './types';
-import { fetchUpstream, getCache, setCache } from './fetch-utils';
+import { fetchUpstream } from './fetch-utils';
+import { cacheGetJson, cacheSetJson } from './category-cache';
 
 /**
  * Bangumi 每日放送（新番时间表）数据获取。
@@ -59,7 +60,7 @@ export function groupCalendarByWeekday(raw: BangumiCalendarDay[]): Record<number
 }
 
 export async function fetchBangumiCalendar(): Promise<Record<number, DoubanItem[]>> {
-  const cached = getCache<Record<number, DoubanItem[]>>(BANGUMI_API);
+  const cached = await cacheGetJson<Record<number, DoubanItem[]>>(`bangumi:calendar`);
   if (cached) return cached;
 
   const res = await fetchUpstream(BANGUMI_API, {
@@ -72,6 +73,6 @@ export async function fetchBangumiCalendar(): Promise<Record<number, DoubanItem[
   const days = groupCalendarByWeekday(Array.isArray(raw) ? raw : []);
   if (Object.keys(days).length === 0) throw new Error('Bangumi 放送表数据为空');
 
-  setCache(BANGUMI_API, days, CACHE_TTL);
+  await cacheSetJson('bangumi:calendar', days, CACHE_TTL / 1000);
   return days;
 }

@@ -1,5 +1,6 @@
 import type { DoubanItem } from './types';
-import { fetchUpstreamJson, getCache, setCache } from './fetch-utils';
+import { fetchUpstreamJson } from './fetch-utils';
+import { rankCacheGetOrLoad } from './rank-cache';
 import { DOUBAN_RANKS, type DoubanRankId } from './douban-rank-shared';
 
 export { DOUBAN_RANKS, isDoubanRankId } from './douban-rank-shared';
@@ -16,7 +17,6 @@ export type { DoubanRankId } from './douban-rank-shared';
  * 首页横滑只需前 20 条，单独走第一页（50 条）切片，不拖慢首屏。
  */
 
-const CACHE_TTL = 60 * 60 * 1000;
 const UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 
@@ -79,10 +79,12 @@ function normalizePage(
 
 /** 首页横滑：只拉第一页（50 条）切前 railCount（24），保证首屏速度 */
 export async function fetchDoubanRank(id: DoubanRankId): Promise<DoubanItem[]> {
+  return rankCacheGetOrLoad(`douban-rank-rail:${id}`, () => loadRankRail(id));
+}
+
+/** 回源拉第一页（不含缓存逻辑） */
+async function loadRankRail(id: DoubanRankId): Promise<DoubanItem[]> {
   const conf = DOUBAN_RANKS[id];
-  const cacheKey = `douban-rank-rail:${id}`;
-  const cached = getCache<DoubanItem[]>(cacheKey);
-  if (cached) return cached;
 
   const raw = await fetchUpstreamJson<RankResponse>(itemsUrl(conf.slug, 0, PAGE_SIZE), {
     timeoutMs: 8000,
@@ -99,16 +101,17 @@ export async function fetchDoubanRank(id: DoubanRankId): Promise<DoubanItem[]> {
   );
   if (items.length === 0) throw new Error('榜单数据为空');
 
-  setCache(cacheKey, items, CACHE_TTL);
   return items;
 }
 
 /** 拉取单个榜单全量（翻页循环），供「查看更多」全部页切片使用 */
 async function fetchRankFull(id: DoubanRankId): Promise<DoubanItem[]> {
+  return rankCacheGetOrLoad(`douban-rank:${id}`, () => loadRankFull(id));
+}
+
+/** 回源翻页拉全量（不含缓存逻辑） */
+async function loadRankFull(id: DoubanRankId): Promise<DoubanItem[]> {
   const conf = DOUBAN_RANKS[id];
-  const cacheKey = `douban-rank:${id}`;
-  const cached = getCache<DoubanItem[]>(cacheKey);
-  if (cached) return cached;
 
   const all: DoubanItem[] = [];
   const seen = new Set<string>();
@@ -137,7 +140,6 @@ async function fetchRankFull(id: DoubanRankId): Promise<DoubanItem[]> {
 
   if (all.length === 0) throw new Error('榜单数据为空');
 
-  setCache(cacheKey, all, CACHE_TTL);
   return all;
 }
 

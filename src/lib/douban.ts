@@ -1,5 +1,6 @@
 import type { DoubanItem } from './types';
-import { fetchUpstream, getCache, setCache } from './fetch-utils';
+import { fetchUpstream } from './fetch-utils';
+import { rankCacheGetOrLoad } from './rank-cache';
 
 /**
  * 豆瓣推荐数据获取（服务端直连，带内存缓存与降级链）。
@@ -8,7 +9,8 @@ import { fetchUpstream, getCache, setCache } from './fetch-utils';
  */
 
 const DOUBAN_API = 'https://movie.douban.com/j/search_subjects';
-const CACHE_TTL = 10 * 60 * 1000;
+/** 标签流（热播电影 / 动画新番）刷新频率比周榜高，给 6 小时 */
+const TAG_TTL_MS = 6 * 60 * 60 * 1000;
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
@@ -33,9 +35,16 @@ export async function fetchDoubanRecommend(
   pageSize: number
 ): Promise<DoubanItem[]> {
   const cacheKey = `douban:${type}:${tag}:${pageStart}:${pageSize}`;
-  const cached = getCache<DoubanItem[]>(cacheKey);
-  if (cached) return cached;
+  return rankCacheGetOrLoad(cacheKey, () => loadTagStream(type, tag, pageStart, pageSize), TAG_TTL_MS);
+}
 
+/** 回源拉标签流（不含缓存逻辑），失败时走公共代理降级 */
+async function loadTagStream(
+  type: 'movie' | 'tv',
+  tag: string,
+  pageStart: number,
+  pageSize: number
+): Promise<DoubanItem[]> {
   const target = `${DOUBAN_API}?type=${type}&tag=${encodeURIComponent(tag)}&sort=recommend&page_limit=${pageSize}&page_start=${pageStart}`;
 
   let raw: DoubanRawSubject[] | undefined;
@@ -83,6 +92,5 @@ export async function fetchDoubanRecommend(
     isTv: type === 'tv',
   }));
 
-  setCache(cacheKey, items, CACHE_TTL);
   return items;
 }

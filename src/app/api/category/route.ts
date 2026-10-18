@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { guardRequest } from '@/lib/api-guard';
 import { resolveAdultFilter } from '@/lib/cms-parser';
 import { checkUpstreamOrIngest } from '@/lib/fetch-utils';
-import type { CategorySort, SourceConfig } from '@/lib/types';
-import { cacheGet, cacheGetJson, cacheSet, cacheSetJson } from '@/lib/category-cache';
+import type { CategorySort, SearchResultItem, SourceConfig } from '@/lib/types';
+import { cacheGetSwr, cacheSetSwr } from '@/lib/category-cache';
 import { startWarmupScheduler } from '@/lib/category-warmup';
 import {
   AREA_WINDOW_PAGES,
@@ -11,9 +11,11 @@ import {
   PER_PAGE,
   SORT_WINDOW_PAGES,
   DIRECT_TTL_SEC,
+  WINDOW_SOFT_TTL_SEC,
   buildWindow,
   directCacheKey,
   fetchDirectPage,
+  hitRateLimit,
   windowCacheKey,
 } from '@/lib/category-window';
 import type { DirectPage } from '@/lib/category-window';
@@ -125,7 +127,15 @@ export async function POST(req: Request) {
   // 曾经这条路径完全不缓存，每次访问实时打源站 2 页（2.5s+）。
   if (sort === 'new' && !areaActive) {
     const directKey = directCacheKey(base, t, pg, filterAdult);
-    const cached = await cacheGetJson<DirectPage>(directKey);
+    // 软过期 = 原来的 10 分钟；过期后先给旧数据，后台按队列刷新（硬上限 1 天）
+    const refreshDirect = async () => {
+      if (hitRateLimit()) return; // 源站刚限流：数据仍是旧的，留给下次访问再刷
+      const fresh = await fetchDirectPage(base, source, t, pg, filterAdult);
+      if (fresh && fresh.list.length > 0) {
+        await cacheSetSwr(directKey, fresh, DIRECT_TTL_SEC, 24 * 60 * 60);
+      }
+    };
+    const cached = await cacheGetSwr<DirectPage>(directKey, refreshDirect);
     if (cached && cached.list.length > 0) {
       return NextResponse.json({
         list: cached.list,
@@ -140,20 +150,28 @@ export async function POST(req: Request) {
     if (!direct) {
       return NextResponse.json({ error: '分类请求失败' }, { status: 502 });
     }
-    await cacheSetJson(directKey, direct, DIRECT_TTL_SEC);
+    await cacheSetSwr(directKey, direct, DIRECT_TTL_SEC, 24 * 60 * 60);
     return NextResponse.json({ list: direct.list, page: pg, pagecount: direct.pagecount, total: direct.total, sort, area: 'all' });
   }
 
   // ── 窗口模式：地区过滤 或 hot/score 排序 ──
   const windowPages = areaActive ? AREA_WINDOW_PAGES : SORT_WINDOW_PAGES;
   const cacheKey = windowCacheKey(base, t, windowPages, filterAdult);
-  let items = await cacheGet(cacheKey);
+  // 窗口：软过期 3 天（过期后先返回旧窗口，后台排队重建），硬上限 30 天
+  const refreshWindow = async () => {
+    if (hitRateLimit()) return; // 限流期间不重建，避免把源站打死
+    const fresh = await buildWindow(base, source, t, windowPages, filterAdult);
+    if (fresh && fresh.length > 0) {
+      await cacheSetSwr(cacheKey, fresh, WINDOW_SOFT_TTL_SEC);
+    }
+  };
+  let items = await cacheGetSwr<SearchResultItem[]>(cacheKey, refreshWindow);
   if (!items) {
     items = await buildWindow(base, source, t, windowPages, filterAdult);
     if (!items) {
       return NextResponse.json({ error: '分类请求失败' }, { status: 502 });
     }
-    await cacheSet(cacheKey, items);
+    await cacheSetSwr(cacheKey, items, WINDOW_SOFT_TTL_SEC);
   }
 
   // 地区过滤（源站 area= 参数被忽略，只能本地按归一化标签筛）

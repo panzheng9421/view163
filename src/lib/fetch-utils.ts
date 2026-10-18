@@ -207,27 +207,6 @@ export async function fetchUpstreamJson<T = unknown>(url: string, options: Fetch
   return data;
 }
 
-/** 内存 TTL 缓存（豆瓣推荐等热点数据） */
-const cache = new Map<string, { value: unknown; expiresAt: number }>();
-
-export function getCache<T>(key: string): T | undefined {
-  const entry = cache.get(key);
-  if (!entry) return undefined;
-  if (Date.now() > entry.expiresAt) {
-    cache.delete(key);
-    return undefined;
-  }
-  return entry.value as T;
-}
-
-export function setCache(key: string, value: unknown, ttlMs: number): void {
-  if (cache.size > 500) {
-    // 简单防膨胀：超限时清掉最早过期的条目
-    const now = Date.now();
-    for (const [k, v] of cache) {
-      if (now > v.expiresAt) cache.delete(k);
-    }
-    if (cache.size > 500) cache.clear();
-  }
-  cache.set(key, { value, expiresAt: Date.now() + ttlMs });
-}
+// 进程内存缓存已移除：所有服务端缓存统一走 Redis（lib/category-cache.ts）。
+// 原因：内存 Map 无按字节封顶，搜索结果这类大 payload 堆积会顶高进程内存；
+// 且进程重启即丢。新代码请用 cacheGetJson / cacheSetJson。

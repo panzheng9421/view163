@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { guardRequest } from '@/lib/api-guard';
 import { cmsRequestHeaders, parseDetail, parseDetailPageHtml } from '@/lib/cms-parser';
-import { fetchUpstream, getCache, setCache } from '@/lib/fetch-utils';
+import { fetchUpstream } from '@/lib/fetch-utils';
+import { cacheGetJson, cacheSetJson } from '@/lib/category-cache';
 import { checkUpstreamAllowed } from '@/lib/ssrf';
 import type { SourceConfig, VideoDetail } from '@/lib/types';
 
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
     // 命中 60s 缓存直接返回（仅缓存成功拿到剧集的结果）
     const detailRootForCache = (source.detail || baseUrl || '').replace(/\/+$/, '');
     const cacheKey = `detail:${source.url}|${detailRootForCache}|${id}`;
-    const cached = getCache<VideoDetail>(cacheKey);
+    const cached = await cacheGetJson<VideoDetail>(cacheKey);
     if (cached) {
       return NextResponse.json(cached);
     }
@@ -95,7 +96,7 @@ export async function GET(req: Request) {
     if (!resolved || resolved.episodes.length === 0) {
       return NextResponse.json({ error: '未找到播放资源' }, { status: 404 });
     }
-    setCache(cacheKey, resolved, DETAIL_CACHE_TTL);
+    await cacheSetJson(cacheKey, resolved, DETAIL_CACHE_TTL / 1000);
     return NextResponse.json(resolved);
   } catch (err) {
     return NextResponse.json(

@@ -105,6 +105,9 @@ export const DIRECT_TTL_SEC = (() => {
   return Math.floor(ms / 1000);
 })();
 
+/** 窗口软过期：3 天。过期后仍返回旧窗口（秒开），后台按队列重建 */
+export const WINDOW_SOFT_TTL_SEC = 3 * 24 * 60 * 60;
+
 /** 直取缓存 key：与窗口 key 区分开（前缀 direct|） */
 export function directCacheKey(base: string, t: number, pg: number, filterAdult: boolean): string {
   return `direct|${base}|${t}|${pg}|${filterAdult}`;

@@ -9,7 +9,8 @@ import {
   resolveAdultFilter,
   scoreSearchResult,
 } from '@/lib/cms-parser';
-import { checkUpstreamOrIngest, fetchUpstream, getCache, setCache } from '@/lib/fetch-utils';
+import { checkUpstreamOrIngest, fetchUpstream } from '@/lib/fetch-utils';
+import { cacheGetJson, cacheSetJson } from '@/lib/category-cache';
 import type {
   SearchResponse,
   SearchStreamEvent,
@@ -260,7 +261,7 @@ export async function POST(req: Request) {
   const filterAdult = resolveAdultFilter(body.filterAdult);
 
   const cacheKey = searchCacheKey(wd, sources, filterAdult, body.health);
-  const cached = getCache<SearchResponse>(cacheKey);
+  const cached = await cacheGetJson<SearchResponse>(cacheKey);
   if (cached) {
     // 流式模式下缓存命中也要走 done 事件，客户端解析逻辑保持单一
     if (new URL(req.url).searchParams.get('stream') === '1') {
@@ -276,7 +277,7 @@ export async function POST(req: Request) {
   if (!isStream) {
     const outcomes = await Promise.all(sources.map((source) => searchSource(source, wd)));
     const payload = aggregateOutcomes(outcomes, wd, filterAdult, body.health);
-    setCache(cacheKey, payload, SEARCH_CACHE_TTL);
+    await cacheSetJson(cacheKey, payload, SEARCH_CACHE_TTL / 1000);
     return NextResponse.json(payload);
   }
 
@@ -304,7 +305,7 @@ export async function POST(req: Request) {
       );
 
       const payload = aggregateOutcomes(outcomes, wd, filterAdult, body.health);
-      setCache(cacheKey, payload, SEARCH_CACHE_TTL);
+      await cacheSetJson(cacheKey, payload, SEARCH_CACHE_TTL / 1000);
       send({ type: 'done', list: payload.list, failures: payload.failures });
       closed = true;
       try {

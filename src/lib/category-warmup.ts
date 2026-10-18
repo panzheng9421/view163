@@ -13,11 +13,12 @@
  * - **构建期不跑**：next build 也会 import 路由模块，用 NEXT_PHASE 守卫掉。
  */
 import { CATEGORY_ORDER, getSubCategories } from './categories';
-import { cacheSet, cacheSetJson } from './category-cache';
+import { cacheSetSwr } from './category-cache';
 import {
   AREA_WINDOW_PAGES,
   DIRECT_TTL_SEC,
   SORT_WINDOW_PAGES,
+  WINDOW_SOFT_TTL_SEC,
   buildWindow,
   directCacheKey,
   fetchDirectPage,
@@ -120,7 +121,7 @@ async function refreshOne(target: WarmTarget, filterAdult: boolean): Promise<voi
       const key = directCacheKey(target.base, target.t, target.directPg, filterAdult);
       const page = await fetchDirectPage(target.base, target.source, target.t, target.directPg, filterAdult);
       if (page && page.list.length > 0) {
-        await cacheSetJson(key, page, DIRECT_TTL_SEC);
+        await cacheSetSwr(key, page, DIRECT_TTL_SEC, 24 * 60 * 60);
       } else {
         const why = recentPageFailures().slice(-3).join(' | ') || '无失败记录';
         console.warn(`[category-warmup] ${target.label} 失败（${why}）`);
@@ -130,7 +131,7 @@ async function refreshOne(target: WarmTarget, filterAdult: boolean): Promise<voi
     const key = windowCacheKey(target.base, target.t, target.windowPages, filterAdult);
     const items = await buildWindow(target.base, target.source, target.t, target.windowPages, filterAdult);
     if (items) {
-      await cacheSet(key, items);
+      await cacheSetSwr(key, items, WINDOW_SOFT_TTL_SEC);
     } else {
       // 全部页失败：打日志便于诊断（源站限流 / 页超时都会走到这里）
       const why = recentPageFailures().slice(-3).join(' | ') || '无失败记录';

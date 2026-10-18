@@ -127,7 +127,7 @@ function getClient(): Redis | null {
 
 /** 读缓存（泛型 JSON）；未命中 / Redis 不可用 / 已过期都返回 null（调用方负责回源） */
 export async function cacheGetJson<T>(key: string): Promise<T | null> {
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const c = getClient();
     if (!c) return fallbackGetJson<T>(key);
     try {
@@ -137,9 +137,9 @@ export async function cacheGetJson<T>(key: string): Promise<T | null> {
       return JSON.parse(raw) as T;
     } catch (err) {
       // 第一次失败多为「连接还没 ready」的启动竞态：断开重连、稍等再试一次
-      if (attempt === 0 && (err as Error).message.includes('writeable')) {
+      if (attempt < 2 && (err as Error).message.includes('writeable')) {
         reconnect(c);
-        await sleep(200);
+        await sleep(500);
         continue;
       }
       console.warn('[category-cache] redis get 失败：', (err as Error).message);
@@ -153,7 +153,7 @@ export async function cacheGetJson<T>(key: string): Promise<T | null> {
 export async function cacheSetJson<T>(key: string, value: T, ttlSec?: number): Promise<void> {
   const raw = JSON.stringify(value);
   const ex = Number.isFinite(ttlSec) && (ttlSec as number) >= 60 ? Math.floor(ttlSec as number) : TTL_SEC;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const c = getClient();
     if (!c) {
       fallbackSetJson(key, value);
@@ -164,9 +164,9 @@ export async function cacheSetJson<T>(key: string, value: T, ttlSec?: number): P
       failStreak = 0;
       return;
     } catch (err) {
-      if (attempt === 0 && (err as Error).message.includes('writeable')) {
+      if (attempt < 2 && (err as Error).message.includes('writeable')) {
         reconnect(c);
-        await sleep(200);
+        await sleep(500);
         continue;
       }
       console.warn('[category-cache] redis set 失败：', (err as Error).message);
@@ -182,6 +182,102 @@ export async function cacheGet(key: string): Promise<SearchResultItem[] | null> 
   if (!Array.isArray(parsed) || parsed.length === 0) return null;
   return parsed;
 }
+
+// ─────────────────────────────────────────────────────────────
+// stale-while-revalidate（分类页专用）
+//
+// 分类页的窗口/直取页来自采集站：单页 2.2~3.7s，一个窗口要翻 20~25 页，
+// 冷启动 3~9s。有了这份逻辑，只要缓存里还有旧数据（30 天以内），用户就秒开，
+// 刷新排在后台按 1.2s 间隔串行跑——不能并发，否则会重演源站 429 封 IP。
+// ─────────────────────────────────────────────────────────────
+
+/** 硬过期：超过这个时间的数据不再返回（软过期只标记"该刷新了"） */
+const SWR_HARD_TTL_SEC = 30 * 24 * 60 * 60;
+/** 后台刷新任务之间的间隔：与预热保持同一套参数，避免把源站按着打 */
+const REFRESH_GAP_MS = (() => {
+  const n = parseInt(process.env.CATEGORY_WARM_GAP_MS || '1200', 10);
+  return Number.isFinite(n) && n >= 0 ? n : 1200;
+})();
+/** 同一个 key 一分钟内只排一次刷新，防止持续访问时反复排队 */
+const REFRESH_COOLDOWN_MS = 60 * 1000;
+
+interface SwrEnvelope<T> {
+  /** 数据 */
+  v: T;
+  /** 软过期时间戳（epoch ms） */
+  e: number;
+}
+
+const refreshQueue: { key: string; run: () => Promise<void> }[] = [];
+const refreshPending = new Set<string>();
+const refreshLastAt = new Map<string, number>();
+let draining = false;
+
+function isEnvelope<T>(value: unknown): value is SwrEnvelope<T> {
+  return !!value && typeof value === 'object' && 'v' in (value as object) && typeof (value as SwrEnvelope<T>).e === 'number';
+}
+
+/** 后台刷新队列：全局并发 1 + 间隔 REFRESH_GAP_MS */
+async function drainRefreshQueue(): Promise<void> {
+  if (draining) return;
+  draining = true;
+  try {
+    while (refreshQueue.length > 0) {
+      const job = refreshQueue.shift()!;
+      refreshLastAt.set(job.key, Date.now());
+      try {
+        await job.run();
+      } catch (err) {
+        console.warn('[category-cache] 后台刷新失败：', (err as Error).message);
+      }
+      refreshPending.delete(job.key);
+      if (refreshQueue.length > 0) await sleep(REFRESH_GAP_MS);
+    }
+  } finally {
+    draining = false;
+  }
+}
+
+function enqueueRefresh(key: string, run: () => Promise<void>): void {
+  if (refreshPending.has(key)) return;
+  const last = refreshLastAt.get(key) ?? 0;
+  if (Date.now() - last < REFRESH_COOLDOWN_MS) return;
+  refreshPending.add(key);
+  refreshQueue.push({ key, run });
+  void drainRefreshQueue();
+}
+
+/**
+ * 读缓存并（必要时）后台刷新：
+ * - 新鲜 → 直接返回
+ * - 过软过期 → 返回旧值，同时排队后台刷新（用户不等待）
+ * - 无缓存 → 返回 null，由调用方同步回源
+ * - 旧格式（非信封，历史数据）→ 视为可用直接返回，下次写入自动升级为信封
+ */
+export async function cacheGetSwr<T>(key: string, refresh: () => Promise<void>): Promise<T | null> {
+  const raw = await cacheGetJson<unknown>(key);
+  if (raw == null) return null;
+
+  if (isEnvelope<T>(raw)) {
+    if (Date.now() < raw.e) return raw.v;
+    enqueueRefresh(key, refresh);
+    return raw.v;
+  }
+  // 兼容历史数据（升级前写入的裸 JSON）
+  return raw as T;
+}
+
+/** 写缓存（SWR 信封）：softTtlSec 到期后仍会返回旧值，只在后台刷新 */
+export async function cacheSetSwr<T>(
+  key: string,
+  value: T,
+  softTtlSec: number,
+  hardTtlSec: number = SWR_HARD_TTL_SEC
+): Promise<void> {
+  const envelope: SwrEnvelope<T> = { v: value, e: Date.now() + Math.max(60, softTtlSec) * 1000 };
+  await cacheSetJson(key, envelope, hardTtlSec);
+}
+
 
 /** 写缓存（影片数组）；ttlSec 可覆盖默认 TTL（如「最新」直取用短 TTL 保新鲜） */
 export async function cacheSet(key: string, items: SearchResultItem[], ttlSec?: number): Promise<void> {

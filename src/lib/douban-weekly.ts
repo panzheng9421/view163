@@ -1,5 +1,6 @@
 import type { DoubanItem } from './types';
-import { fetchUpstream, getCache, setCache } from './fetch-utils';
+import { fetchUpstream } from './fetch-utils';
+import { rankCacheGetOrLoad } from './rank-cache';
 import { fetchDoubanRank, fetchDoubanRankPage, isDoubanRankId } from './douban-rank';
 
 /**
@@ -13,7 +14,6 @@ import { fetchDoubanRank, fetchDoubanRankPage, isDoubanRankId } from './douban-r
  * 数据中心出口 IP 常被限流，Vercel 上不可依赖）；可用 60S_API_BASE 指向自部署实例。
  */
 
-const CACHE_TTL = 60 * 60 * 1000;
 const UA = 'view163';
 
 const FALLBACK_BASE = 'https://60s.viki.moe';
@@ -125,11 +125,11 @@ async function fetchJson(path: string): Promise<unknown> {
 export async function fetchHotList(id: HotListId): Promise<DoubanItem[]> {
   // 豆瓣直连榜单（Top250 / 热播剧集）走独立链路，不经过 60s
   if (isDoubanRankId(id)) return fetchDoubanRank(id);
+  return rankCacheGetOrLoad(`hot-list:${id}`, () => loadHotList(id));
+}
 
-  const cacheKey = `hot-list:${id}`;
-  const cached = getCache<DoubanItem[]>(cacheKey);
-  if (cached) return cached;
-
+/** 回源拉取（不含缓存逻辑）：冷启动同步调用，软过期后由 rankCacheGetOrLoad 后台调用 */
+async function loadHotList(id: HotListId): Promise<DoubanItem[]> {
   let items: DoubanItem[];
 
   const category = DOUBAN_WEEKLY_CATEGORY[id];
@@ -148,7 +148,6 @@ export async function fetchHotList(id: HotListId): Promise<DoubanItem[]> {
 
   if (items.length === 0) throw new Error('榜单数据为空');
 
-  setCache(cacheKey, items, CACHE_TTL);
   return items;
 }
 

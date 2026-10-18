@@ -63,14 +63,17 @@ services:
       redis:
         condition: service_healthy
 
-  # 分类榜单缓存。纯缓存用途：关闭 RDB/AOF，重启后缓存丢失由启动预热自动补回。
+  # 榜单/分类缓存。开 AOF 落盘：容器重建、Redis 重启都不丢缓存，
+  # 首页榜单（TTL 24h）因此能真正常驻，不必每次部署都重新拉上游。
   redis:
     image: redis:7-alpine
     container_name: view163-redis
     restart: unless-stopped
     # maxmemory 硬封顶 + allkeys-lru：缓存超限只淘汰缓存，不影响主站；
-    # --save '' / --appendonly no：不做持久化，省磁盘 IO（缓存丢了能重拉）
-    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    # appendonly everysec：每秒 fsync 一次，最坏丢 1 秒数据（缓存可接受）
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis-data:/data
     expose:
       - "6379"
     healthcheck:
@@ -78,3 +81,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+volumes:
+  redis-data:
