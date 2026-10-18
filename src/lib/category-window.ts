@@ -36,7 +36,27 @@ export function windowCacheKey(
   return `${base}|${t}|w${windowPages}|${filterAdult}`;
 }
 
-/** 按分类拉一页上游数据；失败返回 null（窗口取样允许部分页失败） */
+/**
+ * 窗口内单批并发页数（默认 8，环境变量 CATEGORY_PAGE_BATCH 可配）。
+ * 实测 25 页一次全打（50+ 并发）会把源站 / 代理打挂一批页，窗口整体失败；
+ * 分批 8 页并发后成功率明显提升，总耗时只略增。
+ */
+const PAGE_BATCH = (() => {
+  const n = parseInt(process.env.CATEGORY_PAGE_BATCH || '8', 10);
+  return Number.isFinite(n) && n >= 1 && n <= 25 ? n : 8;
+})();
+
+/** 最近失败的页（诊断用：预热没覆盖全时看这里，只保留最近 30 条） */
+const pageFailures: string[] = [];
+function noteFailure(t: number, pg: number, why: string): void {
+  pageFailures.push(`t${t}/pg${pg}: ${why}`);
+  if (pageFailures.length > 30) pageFailures.shift();
+}
+export function recentPageFailures(): readonly string[] {
+  return pageFailures;
+}
+
+/** 按分类拉一页上游数据；失败返回 null（窗口取样允许部分页失败），原因记入 recentPageFailures */
 export async function fetchPage(
   base: string,
   source: SourceConfig,
@@ -47,15 +67,19 @@ export async function fetchPage(
   const url = `${base}?ac=videolist&t=${encodeURIComponent(String(t))}&pg=${pg}`;
   try {
     const res = await fetchUpstream(url, { timeoutMs: PAGE_TIMEOUT_MS, headers: cmsRequestHeaders() });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      noteFailure(t, pg, `HTTP ${res.status}`);
+      return null;
+    }
     const data = (await res.json()) as unknown;
     return filterAdultResults(parseSearchList(data, source), filterAdult);
-  } catch {
+  } catch (err) {
+    noteFailure(t, pg, (err as Error).message);
     return null;
   }
 }
 
-/** 并发拉取窗口内所有页，合并去重；全部页失败才返回 null */
+/** 并发拉取窗口内所有页（分批推进，避免一次打爆源站），合并去重；全部页失败才返回 null */
 export async function buildWindow(
   base: string,
   source: SourceConfig,
@@ -63,9 +87,16 @@ export async function buildWindow(
   windowPages: number,
   filterAdult: boolean
 ): Promise<SearchResultItem[] | null> {
-  const pages = await Promise.all(
-    Array.from({ length: windowPages }, (_, i) => fetchPage(base, source, t, i + 1, filterAdult))
-  );
+  const pages: (SearchResultItem[] | null)[] = [];
+  for (let start = 1; start <= windowPages; start += PAGE_BATCH) {
+    const end = Math.min(start + PAGE_BATCH - 1, windowPages);
+    const batch = await Promise.all(
+      Array.from({ length: end - start + 1 }, (_, i) =>
+        fetchPage(base, source, t, start + i, filterAdult)
+      )
+    );
+    pages.push(...batch);
+  }
   const ok = pages.filter((p): p is SearchResultItem[] => Array.isArray(p));
   if (ok.length === 0) return null;
   const seen = new Set<string>();

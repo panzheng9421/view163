@@ -65,6 +65,20 @@ function fallbackSet(key: string, items: SearchResultItem[]): void {
   }
 }
 
+/** 断开当前连接并丢弃引用，下次 getClient() 自动重建（retryStrategy 负责重连） */
+function reconnect(c: Redis): void {
+  if (client === c) client = null;
+  try {
+    c.disconnect();
+  } catch {
+    /* 断开失败无所谓 */
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** 熔断：断开连接并在一段时间内不再尝试 Redis */
 function trip(ms: number): void {
   disabledUntil = Date.now() + ms;
@@ -88,15 +102,19 @@ function getClient(): Redis | null {
       commandTimeout: 3000,
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
-      retryStrategy: (times: number) => (times > 2 ? null : 300),
+      // 持续重试、永不放弃：缓存连接抖动应该自愈，而不是永久失效
+      // （曾用「重试 2 次后返回 null」，结果启动竞态失败一次就永久走内存兜底）
+      retryStrategy: (times: number) => Math.min(times * 500, 5000),
     });
     c.on('error', (err: Error) => {
+      // 连接抖动不熔断（retryStrategy 会自愈），只在连续多次异常时提示一次
       failStreak += 1;
-      // 连续 3 次失败即熔断 60s，避免每次分类请求都去等一个连不上的 Redis
-      if (failStreak >= 3) {
-        console.warn('[category-cache] redis 连续失败，熔断 60s：', err.message);
-        trip(60_000);
+      if (failStreak === 5 || failStreak % 50 === 0) {
+        console.warn(`[category-cache] redis 连接异常（第 ${failStreak} 次）：`, err.message);
       }
+    });
+    c.on('ready', () => {
+      failStreak = 0;
     });
     client = c;
     return c;
@@ -109,35 +127,53 @@ function getClient(): Redis | null {
 
 /** 读缓存；未命中 / Redis 不可用 / 已过期都返回 null（调用方负责回源） */
 export async function cacheGet(key: string): Promise<SearchResultItem[] | null> {
-  const c = getClient();
-  if (!c) return fallbackGet(key);
-  try {
-    const raw = await c.get(KEY_PREFIX + key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SearchResultItem[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    failStreak = 0;
-    return parsed;
-  } catch (err) {
-    // Redis 读失败不熔断（可能是单次抖动），但本次走内存兜底
-    console.warn('[category-cache] redis get 失败：', (err as Error).message);
-    return fallbackGet(key);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const c = getClient();
+    if (!c) return fallbackGet(key);
+    try {
+      const raw = await c.get(KEY_PREFIX + key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as SearchResultItem[];
+      if (!Array.isArray(parsed) || parsed.length === 0) return null;
+      failStreak = 0;
+      return parsed;
+    } catch (err) {
+      // 第一次失败多为「连接还没 ready」的启动竞态：断开重连、稍等再试一次
+      if (attempt === 0 && (err as Error).message.includes('writeable')) {
+        reconnect(c);
+        await sleep(200);
+        continue;
+      }
+      console.warn('[category-cache] redis get 失败：', (err as Error).message);
+      return fallbackGet(key);
+    }
   }
+  return null;
 }
 
 /** 写缓存；TTL 由 SET EX 原生维护，Redis 不可用时写内存兜底 */
 export async function cacheSet(key: string, items: SearchResultItem[]): Promise<void> {
-  const c = getClient();
-  if (!c) {
-    fallbackSet(key, items);
-    return;
-  }
-  try {
-    await c.set(KEY_PREFIX + key, JSON.stringify(items), 'EX', TTL_SEC);
-    failStreak = 0;
-  } catch (err) {
-    console.warn('[category-cache] redis set 失败：', (err as Error).message);
-    fallbackSet(key, items);
+  const raw = JSON.stringify(items);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const c = getClient();
+    if (!c) {
+      fallbackSet(key, items);
+      return;
+    }
+    try {
+      await c.set(KEY_PREFIX + key, raw, 'EX', TTL_SEC);
+      failStreak = 0;
+      return;
+    } catch (err) {
+      if (attempt === 0 && (err as Error).message.includes('writeable')) {
+        reconnect(c);
+        await sleep(200);
+        continue;
+      }
+      console.warn('[category-cache] redis set 失败：', (err as Error).message);
+      fallbackSet(key, items);
+      return;
+    }
   }
 }
 

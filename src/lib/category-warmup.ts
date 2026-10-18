@@ -14,7 +14,7 @@
  */
 import { CATEGORY_ORDER, getSubCategories } from './categories';
 import { cacheSet } from './category-cache';
-import { AREA_WINDOW_PAGES, SORT_WINDOW_PAGES, buildWindow, windowCacheKey } from './category-window';
+import { AREA_WINDOW_PAGES, SORT_WINDOW_PAGES, buildWindow, recentPageFailures, windowCacheKey } from './category-window';
 import type { SourceConfig } from './types';
 
 /** 预热周期，默认 6 小时（远小于 30 天 TTL，只做日级保鲜） */
@@ -23,10 +23,16 @@ const WARM_INTERVAL_MS = (() => {
   return Number.isFinite(n) && n >= 60_000 ? n : 6 * 60 * 60 * 1000;
 })();
 
-/** 同时预热的窗口数（每个窗口内部还会并发拉 N 页，故这里刻意保守） */
+/** 同时预热的窗口数（每个窗口内部还会分批并发拉页，故这里刻意保守，默认串行） */
 const WARM_CONCURRENCY = (() => {
-  const n = parseInt(process.env.CATEGORY_WARM_CONCURRENCY || '2', 10);
-  return Number.isFinite(n) && n >= 1 && n <= 8 ? n : 2;
+  const n = parseInt(process.env.CATEGORY_WARM_CONCURRENCY || '1', 10);
+  return Number.isFinite(n) && n >= 1 && n <= 8 ? n : 1;
+})();
+
+/** 容器起来后延迟多久开始预热（默认 5s）：等 Next 就绪、Redis 连接建立，避开启动竞态 */
+const WARM_START_DELAY_MS = (() => {
+  const n = parseInt(process.env.CATEGORY_WARM_START_DELAY_MS || '5000', 10);
+  return Number.isFinite(n) && n >= 0 && n <= 120_000 ? n : 5000;
 })();
 
 interface WarmTarget {
@@ -75,10 +81,16 @@ async function refreshOne(target: WarmTarget, filterAdult: boolean): Promise<voi
   const key = windowCacheKey(target.base, target.t, target.windowPages, filterAdult);
   try {
     const items = await buildWindow(target.base, target.source, target.t, target.windowPages, filterAdult);
-    if (items) await cacheSet(key, items);
+    if (items) {
+      await cacheSet(key, items);
+    } else {
+      // 全部页失败：打日志便于诊断（源站限流 / 页超时都会走到这里）
+      const why = recentPageFailures().slice(-3).join(' | ') || '无失败记录';
+      console.warn(`[category-warmup] ${target.label} 全部页失败（${why}）`);
+    }
   } catch (err) {
     // 预热失败不影响线上请求，下个周期再试
-    console.warn(`[category-warmup] ${target.label} 预热失败：`, (err as Error).message);
+    console.warn(`[category-warmup] ${target.label} 预热异常：`, (err as Error).message);
   }
 }
 
@@ -124,6 +136,11 @@ export function startWarmupScheduler(): void {
       });
   };
 
-  tick();
+  // 首轮延迟启动：等 Next 就绪 + Redis 连接建立，避开「容器起来就写 Redis」的启动竞态
+  if (WARM_START_DELAY_MS > 0) {
+    setTimeout(tick, WARM_START_DELAY_MS);
+  } else {
+    tick();
+  }
   setInterval(tick, WARM_INTERVAL_MS);
 }
