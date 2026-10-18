@@ -1,7 +1,13 @@
 #!/bin/sh
 # view163: 用用户订阅在服务器起 mihomo 代理，供 app 采集走干净出口
-# 路由策略：国内源 DIRECT（干净 DoH 解析避免 GFW 投毒），海外/CF 源走 PROXY（vless 节点）
+# 路由策略：国内源 DIRECT（干净 DoH 防 GFW 投毒），CF/海外源走 PROXY（vless 节点）
+# 不依赖 geoip.mmdb（避免 mihomo 启动下载卡死）
 set -e
+
+# 先杀掉可能残留的手动 mihomo 进程（精确路径，避免误杀本脚本）
+pkill -9 -f '/opt/view163/vpn/mihomo' 2>/dev/null || true
+systemctl stop mihomo 2>/dev/null || true
+sleep 2
 
 mkdir -p /opt/view163/vpn
 
@@ -79,10 +85,12 @@ L.append("bind-address: '*'")
 L.append("mode: rule")
 L.append("log-level: info")
 L.append("")
+# 不启用 geodata：靠显式域名规则路由 + 干净 DoH 防污染，避免启动下载 mmdb 卡死
+# nameserver 用国内常规 DNS（和 nginx 反代一致，影视源站能拿到真 IP 直连通）；
+# fallback 用 doh.pub 仅救被 GFW 投毒的域名（360/ikun 等解析到 127.0.0.2 时）
 L.append("dns:")
 L.append("  enable: true")
-L.append("  enhanced-mode: fake-ip")
-L.append("  fake-ip-range: 198.18.0.1/16")
+L.append("  enhanced-mode: redir-host")
 L.append("  use-hosts: true")
 L.append("  default-nameserver:")
 L.append("    - 223.5.5.5")
@@ -93,7 +101,6 @@ L.append("    - 119.29.29.29")
 L.append("  fallback:")
 L.append("    - https://doh.pub/dns-query")
 L.append("  fallback-filter:")
-L.append("    geoip: true")
 L.append("    ipcidr:")
 L.append("      - 127.0.0.0/8")
 L.append("      - 240.0.0.0/4")
@@ -137,11 +144,12 @@ L.append("    proxies:")
 for n in names:
     L.append(f'      - "{n}"')
 L.append("")
+# 国内源 DIRECT（干净 DoH 防投毒）；CF/海外源沿 MATCH->PROXY
 L.append("rules:")
-L.append("  - DOMAIN-SUFFIX,360zy.com,DIRECT")
-L.append("  - DOMAIN-SUFFIX,ikunzyapi.com,DIRECT")
-L.append("  - DOMAIN-SUFFIX,zy360api.com,DIRECT")
-L.append("  - GEOIP,CN,DIRECT")
+for d in ["dyttzyapi.com", "ffzy5.tv", "360zy.com", "apibdzy.com",
+          "bfzyapi.com", "rycjapi.com", "ikunzyapi.com", "jszyapi.com",
+          "mdzyapi.com"]:
+    L.append(f"  - DOMAIN-SUFFIX,{d},DIRECT")
 L.append("  - MATCH,PROXY")
 L.append("")
 L.append("external-controller: 127.0.0.1:9090")
@@ -180,20 +188,27 @@ systemctl daemon-reload
 systemctl enable mihomo
 systemctl restart mihomo
 
-sleep 4
+sleep 5
 
 echo "=== mihomo 进程 ==="
-ps aux | grep -v grep | grep mihomo | head
+ps aux | grep '/opt/view163/vpn/mihomo' | grep -v grep | head
 echo "=== 监听端口 ==="
 (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep 7890 || echo "未监听 7890"
 
 echo "=== 测 github(走 PROXY) ==="
 curl -s -o /dev/null -w 'github=%{http_code} time=%{time_total}s\n' --max-time 20 -x 127.0.0.1:7890 https://github.com || echo "github 失败"
-echo "=== 测 360zy(国内 DIRECT, 干净 DoH 验证绕开投毒) ==="
-curl -s -o /dev/null -w '360zy=%{http_code} time=%{time_total}s\n' --max-time 20 -x 127.0.0.1:7890 'https://360zy.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' || echo "360zy 失败"
-echo "=== 测 ikun(国内 DIRECT) ==="
-curl -s -o /dev/null -w 'ikun=%{http_code} time=%{time_total}s\n' --max-time 20 -x 127.0.0.1:7890 'https://ikunzyapi.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' || echo "ikun 失败"
-echo "=== 测 zuidapi(CF 走 PROXY) ==="
+echo "=== 测 国内源 DIRECT ==="
+for u in 'https://bfzyapi.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' \
+         'https://360zy.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' \
+         'https://ikunzyapi.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' \
+         'https://jszyapi.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' \
+         'https://www.mdzyapi.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' \
+         'https://caiji.dyttzyapi.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' \
+         'https://ffzy5.tv/api.php/provide/vod?ac=videolist&wd=test&pg=1' \
+         'https://api.apibdzy.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' \
+         'https://cj.rycjapi.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' ; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -x 127.0.0.1:7890 "$u" 2>/dev/null)
+  echo "  $code  $u"
+done
+echo "=== 测 CF 源 zuid(PROXY) ==="
 curl -s -o /dev/null -w 'zuid=%{http_code} time=%{time_total}s\n' --max-time 20 -x 127.0.0.1:7890 'https://api.zuidapi.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' || echo "zuid 失败"
-echo "=== 测 bfzyapi(国内源 DIRECT) ==="
-curl -s -o /dev/null -w 'bfzy=%{http_code} time=%{time_total}s\n' --max-time 20 -x 127.0.0.1:7890 'https://bfzyapi.com/api.php/provide/vod?ac=videolist&wd=test&pg=1' || echo "bfzy 失败"
