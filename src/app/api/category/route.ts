@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { guardRequest } from '@/lib/api-guard';
 import { cmsRequestHeaders, filterAdultResults, parseSearchList, resolveAdultFilter } from '@/lib/cms-parser';
-import { fetchUpstream } from '@/lib/fetch-utils';
-import { checkUpstreamAllowed } from '@/lib/ssrf';
+import { checkUpstreamOrIngest, fetchUpstream } from '@/lib/fetch-utils';
 import type { CategorySort, SearchResultItem, SourceConfig } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -139,7 +138,7 @@ export async function POST(req: Request) {
   }
 
   // 用户可控地址发起服务端请求，必须先过 SSRF 校验
-  const verdict = await checkUpstreamAllowed(source.url);
+  const verdict = await checkUpstreamOrIngest(source.url);
   if (!verdict.ok) {
     return NextResponse.json({ error: verdict.reason }, { status: 400 });
   }

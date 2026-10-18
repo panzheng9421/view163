@@ -75,6 +75,16 @@ function isIngestProxyUrl(url: string): boolean {
   return Boolean(INGEST_PROXY_BASE) && url.startsWith(`${INGEST_PROXY_BASE}/__proxy/`);
 }
 
+/**
+ * 采集源 SSRF 预检：INGEST 模式下请求实际由本机 nginx 代拉（它用 223.5.5.5 解析），
+ * 容器自身 DNS 常被污染（实测 360zy.com 被解析成 2003::f11 这类保留地址），
+ * 此时不该按容器本地解析结果把好源误杀，直接放行；未启用反代时照旧严格校验。
+ */
+export async function checkUpstreamOrIngest(url: string): Promise<{ ok: boolean; reason?: string }> {
+  if (toIngestProxy(url) !== url) return { ok: true };
+  return checkUpstreamAllowed(url);
+}
+
 /** 按方向选出网方式：noProxy 时强制直连，忽略 UPSTREAM_PROXY */
 const pickFetch = (noProxy: boolean): typeof fetch =>
   noProxy && proxyDispatcher ? fetch : upstreamFetch;
@@ -166,8 +176,12 @@ export async function fetchUpstreamWithMeta(url: string, options: FetchOptions =
   const signal = init.signal
     ? AbortSignal.any([init.signal, timeoutSignal])
     : timeoutSignal;
+  // 走采集反代时默认多试一次：nginx 解析到的 CF 边缘 IP 偶有握手 RST/超时，
+  // 换个 IP 重试命中率明显提升（10 源并发时尤其明显）。
+  const ingestTarget = toIngestProxy(url) !== url;
+  const effectiveRetries = retries > 0 ? retries : ingestTarget ? 1 : 0;
   let lastError: unknown;
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  for (let attempt = 0; attempt <= effectiveRetries; attempt++) {
     try {
       if (!safeRedirects) {
         const res = await pickFetch(noProxy)(toIngestProxy(url), {

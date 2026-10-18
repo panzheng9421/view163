@@ -9,8 +9,7 @@ import {
   resolveAdultFilter,
   scoreSearchResult,
 } from '@/lib/cms-parser';
-import { fetchUpstream, getCache, setCache } from '@/lib/fetch-utils';
-import { checkUpstreamAllowed } from '@/lib/ssrf';
+import { checkUpstreamOrIngest, fetchUpstream, getCache, setCache } from '@/lib/fetch-utils';
 import type {
   SearchResponse,
   SearchStreamEvent,
@@ -31,6 +30,15 @@ interface SearchBody {
    */
   health?: Record<string, SourceHealthHint>;
 }
+
+/**
+ * 单页采集超时（毫秒）。源站在境外/挂 CDN 时单页可能 10s+，8s 死线会把好源掐掉；
+ * 走 INGEST 反代（nginx 代拉）时可用 SEARCH_PAGE_TIMEOUT_MS 调大。
+ */
+const PAGE_TIMEOUT_MS = Math.min(
+  60000,
+  Math.max(3000, parseInt(process.env.SEARCH_PAGE_TIMEOUT_MS || '15000', 10) || 15000)
+);
 
 /** 搜索结果短缓存：同一关键词 + 同一组源在 TTL 内直接返回（播放页返回搜索页等场景） */
 const SEARCH_CACHE_TTL = 60 * 1000;
@@ -101,7 +109,7 @@ async function searchSource(source: SourceConfig, wd: string): Promise<SourceSea
     return finish({ sourceKey: source.key, ok: false, list: [], error: '无效的源地址' });
   }
   // 用户可控地址发起服务端请求，必须先过 SSRF 校验（协议白名单 + 内网/保留地址）
-  const verdict = await checkUpstreamAllowed(source.url);
+  const verdict = await checkUpstreamOrIngest(source.url);
   if (!verdict.ok) {
     return finish({ sourceKey: source.key, ok: false, list: [], error: verdict.reason });
   }
@@ -128,7 +136,7 @@ async function searchSource(source: SourceConfig, wd: string): Promise<SourceSea
   const fetchPage = async (page: number) => {
     const api = `${base}?ac=videolist&wd=${encodeURIComponent(wd)}&pg=${page}`;
     const res = await fetchUpstream(api, {
-      timeoutMs: 8000,
+      timeoutMs: PAGE_TIMEOUT_MS,
       headers: cmsRequestHeaders(),
       signal: controller.signal,
     });
