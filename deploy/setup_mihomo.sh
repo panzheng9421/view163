@@ -100,8 +100,6 @@ L.append("    - '*.lan'")
 L.append("    - '+.dyttzyapi.com'")
 L.append("    - '+.ffzy5.tv'")
 L.append("    - '+.apibdzy.com'")
-L.append("    - '+.bfzyapi.com'")
-L.append("    - '+.mdzyapi.com'")
 L.append("  default-nameserver:")
 L.append("    - 223.5.5.5")
 L.append("    - 119.29.29.29")
@@ -148,9 +146,11 @@ L.append("    proxies:")
 for n in names:
     L.append(f'      - "{n}"')
 L.append("")
-# 国内 5 源直连（阿里云北京到它们最快）；其余(CF 站/被污染/区域不可达)沿 MATCH 走节点
+# 仅实测稳定直连的 3 个国内源走 DIRECT（阿里云北京到它们最快）；
+# 暴风/魔都直连不稳（你本地本就是走节点），故移除让其沿 MATCH 走 PROXY；
+# 其余(CF 站/被污染/区域不可达)同样走节点。镜像本地 Clash 规则模式实际行为。
 L.append("rules:")
-for d in ["dyttzyapi.com", "ffzy5.tv", "apibdzy.com", "bfzyapi.com", "mdzyapi.com"]:
+for d in ["dyttzyapi.com", "ffzy5.tv", "apibdzy.com"]:
     L.append(f"  - DOMAIN-SUFFIX,{d},DIRECT")
 L.append("  - MATCH,PROXY")
 L.append("")
