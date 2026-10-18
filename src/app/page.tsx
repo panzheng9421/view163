@@ -284,7 +284,7 @@ function HomeContent() {
               >
                 <input
                   ref={inputRef}
-                  className="flex-1 min-w-0 pr-2 bg-transparent text-sm text-content placeholder:text-faint focus:outline-none"
+                  className="flex-1 min-w-0 pr-2 bg-transparent text-base sm:text-sm text-content placeholder:text-faint focus:outline-none"
                   placeholder="输入影片名称..."
                   value={input}
                   maxLength={100}

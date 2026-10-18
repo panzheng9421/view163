@@ -1123,7 +1123,7 @@ function SourceSubscriptions() {
             <input
               readOnly
               value={published.url}
-              className="input flex-1 min-w-0 !py-1.5 text-xs"
+              className="input flex-1 min-w-0 !py-1.5 text-base sm:text-xs"
               aria-label="已发布的订阅地址"
               onFocus={(e) => e.currentTarget.select()}
             />

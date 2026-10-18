@@ -167,7 +167,7 @@ export function SearchInput({
         className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none"
       />
       <input
-        className="input w-full !pl-8 !py-1.5 text-xs"
+        className="input w-full !pl-8 !py-1.5 text-base sm:text-xs"
         aria-label={placeholder ?? '搜索'}
         value={value}
         onChange={(e) => onChange(e.target.value)}

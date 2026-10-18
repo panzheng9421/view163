@@ -97,7 +97,10 @@ body {
     @apply btn bg-chip text-muted hover:bg-hover hover:text-content border border-line;
   }
   .input {
-    @apply bg-chip border border-line rounded-md px-3 py-2 text-sm text-content placeholder:text-faint;
+    /* text-base 仅限移动端：iOS 对字号 < 16px 的输入框会在聚焦时强制缩放页面，
+       且键盘收起后视口不一定复位（表现为画面被撑大、错位）。
+       桌面端沿用 14px，视觉密度与整体一致。 */
+    @apply bg-chip border border-line rounded-md px-3 py-2 text-base sm:text-sm text-content placeholder:text-faint;
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:border-accent;
   }
   .tag {

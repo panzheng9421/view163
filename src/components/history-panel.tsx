@@ -70,7 +70,7 @@ export function HistoryPanel({ open, onClose }: { open: boolean; onClose: () => 
               />
               <input
                 type="text"
-                className="w-full h-9 pl-8 pr-8 rounded-lg border border-line bg-chip text-sm text-content placeholder:text-faint focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/40"
+                className="w-full h-9 pl-8 pr-8 rounded-lg border border-line bg-chip text-base sm:text-sm text-content placeholder:text-faint focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/40"
                 placeholder="搜索观看历史..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}

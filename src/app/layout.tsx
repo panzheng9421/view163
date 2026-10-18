@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from '@/components/providers';
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/site';
+import ViewportReset from '@/components/viewport-reset';
 
 export const metadata: Metadata = {
   // 绝对地址的基准，sitemap / OpenGraph / canonical 都靠它拼出完整 URL
@@ -35,6 +36,10 @@ export const viewport: Viewport = {
   themeColor: '#0b101a',
   width: 'device-width',
   initialScale: 1,
+  // 锁定缩放比例上限：配合输入框 16px 字号（globals.css .input），
+  // 杜绝 iOS 聚焦输入框时的强制放大，以及键盘收起后视口不复位导致的画面撑大。
+  // 字号与本条是根治组合——只加这条会牺牲无障碍放大能力，只改字号在极端机型上仍可能触发。
+  maximumScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -53,6 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
+        <ViewportReset />
         <Providers>{children}</Providers>
       </body>
     </html>
