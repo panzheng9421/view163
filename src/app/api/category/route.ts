@@ -4,6 +4,14 @@ import { cmsRequestHeaders, filterAdultResults, parseSearchList, resolveAdultFil
 import { checkUpstreamOrIngest, fetchUpstream } from '@/lib/fetch-utils';
 import type { CategorySort, SearchResultItem, SourceConfig } from '@/lib/types';
 import { cacheGet, cacheSet } from '@/lib/category-cache';
+import { startWarmupScheduler } from '@/lib/category-warmup';
+import {
+  AREA_WINDOW_PAGES,
+  PAGE_TIMEOUT_MS,
+  SORT_WINDOW_PAGES,
+  buildWindow,
+  windowCacheKey,
+} from '@/lib/category-window';
 
 export const runtime = 'nodejs';
 
@@ -29,124 +37,14 @@ const PER_PAGE = 24;
 const MAX_PG = 200;
 
 /**
- * 单页上游请求超时。环境变量 CATEGORY_PAGE_TIMEOUT_MS 可配，默认 9s。
- * 源站在境外（Cloudflare）时国内机房直连常见 3~15s，默认值容易整批超时，
- * 部署时可按实测调大（如 20000）。
+ * 取样窗口页数 / 单页超时 / 缓存 key：lib/category-window.ts（请求与预热共用同一套）
+ * 缓存存储与 TTL：lib/category-cache.ts（Redis 优先，降级小容量内存 LRU）
+ * 后台预热调度：lib/category-warmup.ts（全部源 × 全部分类标签 × 两种窗口）
+ *
+ * 这里在路由模块加载时启动调度器：实测服务启动后几秒内预热即开始跑，
+ * 用户首访基本都是命中缓存。
  */
-const PAGE_TIMEOUT_MS = (() => {
-  const n = parseInt(process.env.CATEGORY_PAGE_TIMEOUT_MS || '9000', 10);
-  return Number.isFinite(n) && n >= 1000 ? n : 9000;
-})();
-
-/**
- * 取样窗口页数：
- * - SORT_WINDOW_PAGES：hot/score 排序取样（最近更新的 100 部，够排）
- * - AREA_WINDOW_PAGES：地区过滤取样（最近更新的 500 部，实测覆盖主要地区；
- *   并发 25 页约 9 秒，冷启动可接受，且结果进长期缓存（默认 30 天）基本只算一次）
- */
-// 排序窗口从 5 页降到 3 页（60 部）：足够排首屏 24 条，冷启动更快；
-// 配合下方「窗口预热」后用户几乎永远命中缓存。
-const SORT_WINDOW_PAGES = 3;
-const AREA_WINDOW_PAGES = 25;
-
-/**
- * 窗口结果的 TTL / 存储由 lib/category-cache.ts 统一负责：
- * Redis 优先（独立进程、maxmemory 硬封顶），不可用时降级小容量进程内 LRU。
- * 默认 30 天，环境变量 CATEGORY_WINDOW_TTL_MS 可配（毫秒）。
- */
-
-/**
- * 窗口预热：高频「评分 / 播放量」排序组合在后台持续刷新，保证缓存常驻。
- * 用户首次进入分类页（尤其是「高分好评」这类窗口模式）直接命中缓存，
- * 首屏从「冷启动并发拉 N 页（2s+）」降到「命中缓存（<50ms）」。
- * 缓存 TTL 现在默认 30 天，刷新只为了让数据保持「日级新鲜」并覆盖冷门分类首次访问，
- * 周期默认 6 小时（环境变量 CATEGORY_WARM_INTERVAL_MS 可配，毫秒），远小于 TTL。
- */
-const WARM_SOURCE: SourceConfig = {
-  key: 'env_0',
-  name: '暴风资源',
-  url: 'https://bfzyapi.com/api.php/provide/vod',
-  detail: 'https://bfzyapi.com',
-  isAdult: false,
-};
-// 电影各二级子类的 type_id（与 categories.ts 的 bfzy 映射一致）
-const WARM_T = [21, 22, 23, 24, 25, 26, 27, 28, 51];
-// 注意：窗口取样结果与排序无关（score/hot 都是本地重排同一批数据），
-// 所以预热只需按分类各刷一次，缓存 key 也不包含 sort。
-/** 预热周期，默认 6 小时（远小于 30 天 TTL，只做日级保鲜与冷门分类覆盖） */
-const WARM_INTERVAL_MS = (() => {
-  const n = parseInt(process.env.CATEGORY_WARM_INTERVAL_MS || String(6 * 60 * 60 * 1000), 10);
-  return Number.isFinite(n) && n >= 60_000 ? n : 6 * 60 * 60 * 1000;
-})();
-
-async function refreshWindow(t: number): Promise<void> {
-  const base = WARM_SOURCE.url.replace(/\/+$/, '');
-  const windowPages = SORT_WINDOW_PAGES;
-  const cacheKey = `${base}|${t}|w${windowPages}|true`;
-  try {
-    const items = await buildWindow(base, WARM_SOURCE, t, windowPages, true);
-    if (items) await cacheSet(cacheKey, items);
-  } catch {
-    // 预热失败不影响线上请求，下次周期再试
-  }
-}
-
-const warmupStarted = (globalThis as { __catWarmup?: boolean }).__catWarmup;
-if (!warmupStarted) {
-  (globalThis as { __catWarmup?: boolean }).__catWarmup = true;
-  const tick = () => {
-    for (const t of WARM_T) void refreshWindow(t);
-  };
-  tick(); // 启动即预热一轮，避免首访冷启动
-  setInterval(tick, WARM_INTERVAL_MS);
-}
-
-/** 按分类 + 排序拉一页上游数据；失败返回 null（窗口取样允许部分页失败） */
-async function fetchPage(
-  base: string,
-  source: SourceConfig,
-  t: number,
-  pg: number,
-  filterAdult: boolean
-): Promise<SearchResultItem[] | null> {
-  const url = `${base}?ac=videolist&t=${encodeURIComponent(String(t))}&pg=${pg}`;
-  try {
-    const res = await fetchUpstream(url, { timeoutMs: PAGE_TIMEOUT_MS, headers: cmsRequestHeaders() });
-    if (!res.ok) return null;
-    const data = (await res.json()) as unknown;
-    return filterAdultResults(parseSearchList(data, source), filterAdult);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 按分类 + 窗口页数并发拉源站页，合并去重后返回（窗口取样核心逻辑，供请求与预热共用）。
- * 允许部分页失败（窗口取样不要求全页成功）。
- */
-async function buildWindow(
-  base: string,
-  source: SourceConfig,
-  t: number,
-  windowPages: number,
-  filterAdult: boolean
-): Promise<SearchResultItem[] | null> {
-  const pages = await Promise.all(
-    Array.from({ length: windowPages }, (_, i) => fetchPage(base, source, t, i + 1, filterAdult))
-  );
-  const ok = pages.filter((p): p is SearchResultItem[] => Array.isArray(p));
-  if (ok.length === 0) return null;
-  const seen = new Set<string>();
-  const merged: SearchResultItem[] = [];
-  for (const page of ok) {
-    for (const item of page) {
-      if (!item.vodId || seen.has(item.vodId)) continue;
-      seen.add(item.vodId);
-      merged.push(item);
-    }
-  }
-  return merged;
-}
+startWarmupScheduler();
 
 /**
  * 把源站脏乱的 vod_area 归一化成标准地区标签。
@@ -277,7 +175,7 @@ export async function POST(req: Request) {
 
   // ── 窗口模式：地区过滤 或 hot/score 排序 ──
   const windowPages = areaActive ? AREA_WINDOW_PAGES : SORT_WINDOW_PAGES;
-  const cacheKey = `${base}|${t}|w${windowPages}|${filterAdult}`;
+  const cacheKey = windowCacheKey(base, t, windowPages, filterAdult);
   let items = await cacheGet(cacheKey);
   if (!items) {
     items = await buildWindow(base, source, t, windowPages, filterAdult);
