@@ -87,7 +87,8 @@ PASSWORD=dev-password npm run dev   # http://localhost:8080
 | `REQUEST_TIMEOUT`          | 否  | 代理上游请求超时（毫秒），默认 8000                                                                                                                                         |
 | `MAX_RETRIES`              | 否  | 代理请求重试次数，默认 1                                                                                                                                                |
 | `SEARCH_MAX_PAGES`         | 否  | 每个搜索源最多抓取的页数（1-50，默认 5）                                                                                                                                      |
-| `SEARCH_SOURCE_TIMEOUT_MS` | 否  | 单个搜索源的总死线（毫秒，3s-60s，默认 10000）                                                                                                                                |
+| `SEARCH_SOURCE_TIMEOUT_MS` | 否  | 单个搜索源的总死线（毫秒，3s-60s，默认 10000）；源站在境外/慢链路时可调大                                                                                                                       |
+| `CATEGORY_PAGE_TIMEOUT_MS` | 否  | 分类页单页上游超时（毫秒，默认 9000）；国内机房直连境外源常见 3~15s，建议按实测调到 20000                                                                                                             |
 | `USER_AGENT`               | 否  | 代理请求使用的 UA（豆瓣封面防盗链等场景），默认 Chrome UA                                                                                                                          |
 | `FALLBACK_CORS_PROXY`      | 否  | 豆瓣推荐数据直连被拒时降级使用的 CORS 代理地址                                                                                                                                   |
 | `COOKIE_SECURE`            | 否  | 显式覆盖会话 cookie 的 `Secure` 标记；反向代理未正确传递 `x-forwarded-proto` 导致 HTTPS 下登录失效时，设为 `true` 可解                                                                       |

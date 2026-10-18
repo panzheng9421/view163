@@ -31,12 +31,14 @@ services:
       # 可选：首页推荐数据源默认值（douban / bangumi / hot-list），仅对未主动选择过的用户生效
       # - DEFAULT_RECOMMEND_SOURCE=douban
       # 可选：代理上游请求超时（毫秒）与重试次数
-      # - REQUEST_TIMEOUT=8000
+      - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-8000}
       # - MAX_RETRIES=1
       # 可选：每个搜索源最多抓取的页数（1-50，默认 5），调大会显著增加上游请求量
       # - SEARCH_MAX_PAGES=5
       # 可选：单个搜索源的总死线（毫秒，3s-60s，默认 10000），到点中断该源并标记超时
-      # - SEARCH_SOURCE_TIMEOUT_MS=10000
+      - SEARCH_SOURCE_TIMEOUT_MS=${SEARCH_SOURCE_TIMEOUT_MS:-10000}
+      # 可选：分类页单页上游超时（毫秒，默认 9000）。源站在境外/慢链路时可调大到 20000
+      - CATEGORY_PAGE_TIMEOUT_MS=${CATEGORY_PAGE_TIMEOUT_MS:-9000}
       # 可选：代理请求 UA（豆瓣防盗链等场景）
       # - USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36
       # 可选：影视榜单推荐源（60s API）实例地址，官方公共实例有限流

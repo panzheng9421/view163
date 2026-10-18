@@ -29,6 +29,16 @@ const PER_PAGE = 24;
 const MAX_PG = 200;
 
 /**
+ * 单页上游请求超时。环境变量 CATEGORY_PAGE_TIMEOUT_MS 可配，默认 9s。
+ * 源站在境外（Cloudflare）时国内机房直连常见 3~15s，默认值容易整批超时，
+ * 部署时可按实测调大（如 20000）。
+ */
+const PAGE_TIMEOUT_MS = (() => {
+  const n = parseInt(process.env.CATEGORY_PAGE_TIMEOUT_MS || '9000', 10);
+  return Number.isFinite(n) && n >= 1000 ? n : 9000;
+})();
+
+/**
  * 取样窗口页数：
  * - SORT_WINDOW_PAGES：hot/score 排序取样（最近更新的 100 部，够排）
  * - AREA_WINDOW_PAGES：地区过滤取样（最近更新的 500 部，实测覆盖主要地区；
@@ -51,7 +61,7 @@ async function fetchPage(
 ): Promise<SearchResultItem[] | null> {
   const url = `${base}?ac=videolist&t=${encodeURIComponent(String(t))}&pg=${pg}`;
   try {
-    const res = await fetchUpstream(url, { timeoutMs: 9000, headers: cmsRequestHeaders() });
+    const res = await fetchUpstream(url, { timeoutMs: PAGE_TIMEOUT_MS, headers: cmsRequestHeaders() });
     if (!res.ok) return null;
     const data = (await res.json()) as unknown;
     return filterAdultResults(parseSearchList(data, source), filterAdult);
@@ -146,7 +156,7 @@ export async function POST(req: Request) {
     try {
       const [resA, resB] = await Promise.all(
         [srcPgA, srcPgB].map((p) =>
-          fetchUpstream(pageUrl(p), { timeoutMs: 9000, headers: cmsRequestHeaders() })
+          fetchUpstream(pageUrl(p), { timeoutMs: PAGE_TIMEOUT_MS, headers: cmsRequestHeaders() })
         )
       );
       if (!resA.ok) {
