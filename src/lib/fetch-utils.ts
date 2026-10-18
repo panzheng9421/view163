@@ -76,12 +76,12 @@ function isIngestProxyUrl(url: string): boolean {
 }
 
 /**
- * 采集源 SSRF 预检：INGEST 模式下请求实际由本机 nginx 代拉（它用 223.5.5.5 解析），
- * 容器自身 DNS 常被污染（实测 360zy.com 被解析成 2003::f11 这类保留地址），
- * 此时不该按容器本地解析结果把好源误杀，直接放行；未启用反代时照旧严格校验。
+ * 采集源 SSRF 预检：当请求实际由本机代理带出时（INGEST 反代 或 UPSTREAM_PROXY 全局代理），
+ * 容器自身 DNS 解析结果无意义（实测 360zy.com 被解析成 2003::f11 这类保留地址而误杀），
+ * 此时不该按容器本地解析把好源误杀，直接放行；两者都未启用时照旧严格校验。
  */
 export async function checkUpstreamOrIngest(url: string): Promise<{ ok: boolean; reason?: string }> {
-  if (toIngestProxy(url) !== url) return { ok: true };
+  if (toIngestProxy(url) !== url || hasUpstreamProxy) return { ok: true };
   return checkUpstreamAllowed(url);
 }
 
