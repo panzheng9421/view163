@@ -37,13 +37,13 @@ const FALLBACK_MAX = (() => {
 const KEY_PREFIX = 'v163:catwin:';
 
 /** 进程内兜底缓存（LRU，靠 Map 插入顺序：命中先删再插 = 移到末尾） */
-const fallback = new Map<string, { ts: number; items: SearchResultItem[] }>();
+const fallback = new Map<string, { ts: number; value: unknown }>();
 
 let client: Redis | null = null;
 let disabledUntil = 0;
 let failStreak = 0;
 
-function fallbackGet(key: string): SearchResultItem[] | null {
+function fallbackGetJson<T>(key: string): T | null {
   const hit = fallback.get(key);
   if (!hit) return null;
   if (Date.now() - hit.ts >= TTL_MS) {
@@ -52,12 +52,12 @@ function fallbackGet(key: string): SearchResultItem[] | null {
   }
   fallback.delete(key);
   fallback.set(key, hit);
-  return hit.items;
+  return hit.value as T;
 }
 
-function fallbackSet(key: string, items: SearchResultItem[]): void {
+function fallbackSetJson<T>(key: string, value: T): void {
   fallback.delete(key);
-  fallback.set(key, { ts: Date.now(), items });
+  fallback.set(key, { ts: Date.now(), value });
   while (fallback.size > FALLBACK_MAX) {
     const oldest = fallback.keys().next();
     if (oldest.done) break;
@@ -125,18 +125,16 @@ function getClient(): Redis | null {
   }
 }
 
-/** 读缓存；未命中 / Redis 不可用 / 已过期都返回 null（调用方负责回源） */
-export async function cacheGet(key: string): Promise<SearchResultItem[] | null> {
+/** 读缓存（泛型 JSON）；未命中 / Redis 不可用 / 已过期都返回 null（调用方负责回源） */
+export async function cacheGetJson<T>(key: string): Promise<T | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const c = getClient();
-    if (!c) return fallbackGet(key);
+    if (!c) return fallbackGetJson<T>(key);
     try {
       const raw = await c.get(KEY_PREFIX + key);
       if (!raw) return null;
-      const parsed = JSON.parse(raw) as SearchResultItem[];
-      if (!Array.isArray(parsed) || parsed.length === 0) return null;
       failStreak = 0;
-      return parsed;
+      return JSON.parse(raw) as T;
     } catch (err) {
       // 第一次失败多为「连接还没 ready」的启动竞态：断开重连、稍等再试一次
       if (attempt === 0 && (err as Error).message.includes('writeable')) {
@@ -145,23 +143,24 @@ export async function cacheGet(key: string): Promise<SearchResultItem[] | null> 
         continue;
       }
       console.warn('[category-cache] redis get 失败：', (err as Error).message);
-      return fallbackGet(key);
+      return fallbackGetJson<T>(key);
     }
   }
   return null;
 }
 
-/** 写缓存；TTL 由 SET EX 原生维护，Redis 不可用时写内存兜底 */
-export async function cacheSet(key: string, items: SearchResultItem[]): Promise<void> {
-  const raw = JSON.stringify(items);
+/** 写缓存（泛型 JSON）；ttlSec 可覆盖默认 TTL，Redis 不可用时写内存兜底 */
+export async function cacheSetJson<T>(key: string, value: T, ttlSec?: number): Promise<void> {
+  const raw = JSON.stringify(value);
+  const ex = Number.isFinite(ttlSec) && (ttlSec as number) >= 60 ? Math.floor(ttlSec as number) : TTL_SEC;
   for (let attempt = 0; attempt < 2; attempt++) {
     const c = getClient();
     if (!c) {
-      fallbackSet(key, items);
+      fallbackSetJson(key, value);
       return;
     }
     try {
-      await c.set(KEY_PREFIX + key, raw, 'EX', TTL_SEC);
+      await c.set(KEY_PREFIX + key, raw, 'EX', ex);
       failStreak = 0;
       return;
     } catch (err) {
@@ -171,10 +170,22 @@ export async function cacheSet(key: string, items: SearchResultItem[]): Promise<
         continue;
       }
       console.warn('[category-cache] redis set 失败：', (err as Error).message);
-      fallbackSet(key, items);
+      fallbackSetJson(key, value);
       return;
     }
   }
+}
+
+/** 读缓存（影片数组）；包装 cacheGetJson，附带空数组 / 类型校验 */
+export async function cacheGet(key: string): Promise<SearchResultItem[] | null> {
+  const parsed = await cacheGetJson<SearchResultItem[]>(key);
+  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  return parsed;
+}
+
+/** 写缓存（影片数组）；ttlSec 可覆盖默认 TTL（如「最新」直取用短 TTL 保新鲜） */
+export async function cacheSet(key: string, items: SearchResultItem[], ttlSec?: number): Promise<void> {
+  await cacheSetJson(key, items, ttlSec);
 }
 
 /** 供健康检查 / 排障：当前缓存后端 */

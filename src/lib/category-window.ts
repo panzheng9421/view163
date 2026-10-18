@@ -88,7 +88,88 @@ export async function fetchPage(
   }
 }
 
-/** 并发拉取窗口内所有页（分批推进，避免一次打爆源站），合并去重；全部页失败才返回 null */
+/**
+ * 每页条数：24 = 1 排 6 卡的整数倍（4 整行，网格不留缺口）。
+ * 源站每页硬 20 条（pagesize/limit 实测被忽略），故「最新」直取每次响应
+ * 24 条 = 并发拉 2 个源站页合并去重取前 24；窗口模式直接在本地切片。
+ */
+export const PER_PAGE = 24;
+
+/**
+ * 「最新」直取缓存 TTL（默认 10 分钟，环境变量 CATEGORY_DIRECT_TTL_MS 可配）。
+ * 与窗口的 30 天不同：「最新」要保新鲜度，但不能像窗口那样一个月不刷。
+ */
+export const DIRECT_TTL_SEC = (() => {
+  const n = parseInt(process.env.CATEGORY_DIRECT_TTL_MS || String(10 * 60 * 1000), 10);
+  const ms = Number.isFinite(n) && n >= 60_000 ? n : 10 * 60 * 1000;
+  return Math.floor(ms / 1000);
+})();
+
+/** 直取缓存 key：与窗口 key 区分开（前缀 direct|） */
+export function directCacheKey(base: string, t: number, pg: number, filterAdult: boolean): string {
+  return `direct|${base}|${t}|${pg}|${filterAdult}`;
+}
+
+export interface DirectPage {
+  list: SearchResultItem[];
+  /** 前端分页页数（源站页数 ÷ 2） */
+  pagecount: number;
+  total: number;
+}
+
+/**
+ * 「最新」直取：并发拉 2 个源站页（2N-1, 2N）合并去重取前 PER_PAGE 条。
+ * 这条路径是分类页的**默认排序**（顶栏点「电影/电视剧」进来就是它），
+ * 曾经完全没有缓存，每次访问都实时打源站（2.5s+），现已加短 TTL 缓存。
+ */
+export async function fetchDirectPage(
+  base: string,
+  source: SourceConfig,
+  t: number,
+  pg: number,
+  filterAdult: boolean
+): Promise<DirectPage | null> {
+  const pageUrl = (p: number) =>
+    `${base}?ac=videolist&t=${encodeURIComponent(String(t))}&pg=${p}`;
+  const srcPgA = pg * 2 - 1;
+  const srcPgB = pg * 2;
+  const [resA, resB] = await Promise.all(
+    [srcPgA, srcPgB].map((p) =>
+      fetchUpstream(pageUrl(p), { timeoutMs: PAGE_TIMEOUT_MS, headers: cmsRequestHeaders() })
+    )
+  );
+  if (!resA.ok) {
+    noteFailure(t, srcPgA, `HTTP ${resA.status}`);
+    return null;
+  }
+  const dataA = (await resA.json()) as { pagecount?: unknown; total?: unknown };
+  const rawA = parseSearchList(dataA, source);
+  let rawB: SearchResultItem[] = [];
+  if (resB.ok) {
+    try {
+      rawB = parseSearchList((await resB.json()) as unknown, source);
+    } catch {
+      noteFailure(t, srcPgB, 'parse');
+    }
+  } else {
+    noteFailure(t, srcPgB, `HTTP ${resB.status}`);
+  }
+  // 合并去重（翻页期间源站新增会导致同一部片出现在相邻页）
+  const seen = new Set<string>();
+  const merged: SearchResultItem[] = [];
+  for (const item of [...rawA, ...rawB]) {
+    if (!item.vodId || seen.has(item.vodId)) continue;
+    seen.add(item.vodId);
+    merged.push(item);
+  }
+  const srcPagecount = parseInt(String(dataA.pagecount ?? '1'), 10) || 1;
+  const total = parseInt(String(dataA.total ?? '0'), 10) || 0;
+  return {
+    list: filterAdultResults(merged, filterAdult).slice(0, PER_PAGE),
+    pagecount: Math.max(1, Math.ceil(srcPagecount / 2)),
+    total,
+  };
+}
 export async function buildWindow(
   base: string,
   source: SourceConfig,

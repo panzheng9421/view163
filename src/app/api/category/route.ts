@@ -1,17 +1,22 @@
 import { NextResponse } from 'next/server';
 import { guardRequest } from '@/lib/api-guard';
-import { cmsRequestHeaders, filterAdultResults, parseSearchList, resolveAdultFilter } from '@/lib/cms-parser';
-import { checkUpstreamOrIngest, fetchUpstream } from '@/lib/fetch-utils';
-import type { CategorySort, SearchResultItem, SourceConfig } from '@/lib/types';
-import { cacheGet, cacheSet } from '@/lib/category-cache';
+import { resolveAdultFilter } from '@/lib/cms-parser';
+import { checkUpstreamOrIngest } from '@/lib/fetch-utils';
+import type { CategorySort, SourceConfig } from '@/lib/types';
+import { cacheGet, cacheGetJson, cacheSet, cacheSetJson } from '@/lib/category-cache';
 import { startWarmupScheduler } from '@/lib/category-warmup';
 import {
   AREA_WINDOW_PAGES,
   PAGE_TIMEOUT_MS,
+  PER_PAGE,
   SORT_WINDOW_PAGES,
+  DIRECT_TTL_SEC,
   buildWindow,
+  directCacheKey,
+  fetchDirectPage,
   windowCacheKey,
 } from '@/lib/category-window';
+import type { DirectPage } from '@/lib/category-window';
 
 export const runtime = 'nodejs';
 
@@ -25,13 +30,6 @@ interface CategoryBody {
   area?: string;
   filterAdult?: boolean;
 }
-
-/**
- * 每页条数：24 = 1 排 6 卡的整数倍（4 整行，网格不留缺口）。
- * 源站每页硬 20 条（pagesize/limit 实测被忽略），故「最新」直取模式每次响应
- * 24 条 = 并发拉 2 个源站页合并去重取前 24；窗口模式直接在本地切片。
- */
-const PER_PAGE = 24;
 
 /** 前端最大页数：直取 126 页（=252 源站页 ÷ 2）+ 余量 */
 const MAX_PG = 200;
@@ -123,54 +121,27 @@ export async function POST(req: Request) {
   const base = source.url.replace(/\/+$/, '');
 
   // ── 全量直取：仅「最新 + 全部地区」走这条路 ──
+  // 这是分类页的默认排序（顶栏点分类进来就是它），必须也走缓存：
+  // 曾经这条路径完全不缓存，每次访问实时打源站 2 页（2.5s+）。
   if (sort === 'new' && !areaActive) {
-    // 每次响应 24 条：源站每页硬 20 条，故并发拉 2 页（2N-1, 2N）合并去重取前 24
-    const srcPgA = pg * 2 - 1;
-    const srcPgB = pg * 2;
-    const pageUrl = (p: number) =>
-      `${base}?ac=videolist&t=${encodeURIComponent(String(t))}&pg=${p}`;
-    try {
-      const [resA, resB] = await Promise.all(
-        [srcPgA, srcPgB].map((p) =>
-          fetchUpstream(pageUrl(p), { timeoutMs: PAGE_TIMEOUT_MS, headers: cmsRequestHeaders() })
-        )
-      );
-      if (!resA.ok) {
-        return NextResponse.json({ error: `源返回 HTTP ${resA.status}` }, { status: 502 });
-      }
-      const dataA = (await resA.json()) as {
-        pagecount?: unknown;
-        total?: unknown;
-      };
-      const rawA = parseSearchList(dataA, source);
-      let rawB: SearchResultItem[] = [];
-      if (resB.ok) {
-        try {
-          rawB = parseSearchList((await resB.json()) as unknown, source);
-        } catch {
-          // 第二页解析失败不阻塞：第一页仍可出 20 条
-        }
-      }
-      // 合并去重（翻页期间源站新增会导致同一部片出现在相邻页）
-      const seen = new Set<string>();
-      const merged: SearchResultItem[] = [];
-      for (const item of [...rawA, ...rawB]) {
-        if (!item.vodId || seen.has(item.vodId)) continue;
-        seen.add(item.vodId);
-        merged.push(item);
-      }
-      const srcPagecount = parseInt(String(dataA.pagecount ?? '1'), 10) || 1;
-      const total = parseInt(String(dataA.total ?? '0'), 10) || 0;
-      // 前端每页 24 条 = 2 个源站页
-      const pagecount = Math.max(1, Math.ceil(srcPagecount / 2));
-      const list = filterAdultResults(merged, filterAdult).slice(0, PER_PAGE);
-      return NextResponse.json({ list, page: pg, pagecount, total, sort, area: 'all' });
-    } catch (err) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : '分类请求失败' },
-        { status: 502 }
-      );
+    const directKey = directCacheKey(base, t, pg, filterAdult);
+    const cached = await cacheGetJson<DirectPage>(directKey);
+    if (cached && cached.list.length > 0) {
+      return NextResponse.json({
+        list: cached.list,
+        page: pg,
+        pagecount: cached.pagecount,
+        total: cached.total,
+        sort,
+        area: 'all',
+      });
     }
+    const direct = await fetchDirectPage(base, source, t, pg, filterAdult);
+    if (!direct) {
+      return NextResponse.json({ error: '分类请求失败' }, { status: 502 });
+    }
+    await cacheSetJson(directKey, direct, DIRECT_TTL_SEC);
+    return NextResponse.json({ list: direct.list, page: pg, pagecount: direct.pagecount, total: direct.total, sort, area: 'all' });
   }
 
   // ── 窗口模式：地区过滤 或 hot/score 排序 ──

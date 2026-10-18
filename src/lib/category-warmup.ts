@@ -13,11 +13,14 @@
  * - **构建期不跑**：next build 也会 import 路由模块，用 NEXT_PHASE 守卫掉。
  */
 import { CATEGORY_ORDER, getSubCategories } from './categories';
-import { cacheSet } from './category-cache';
+import { cacheSet, cacheSetJson } from './category-cache';
 import {
   AREA_WINDOW_PAGES,
+  DIRECT_TTL_SEC,
   SORT_WINDOW_PAGES,
   buildWindow,
+  directCacheKey,
+  fetchDirectPage,
   hitRateLimit,
   recentPageFailures,
   windowCacheKey,
@@ -61,6 +64,8 @@ interface WarmTarget {
   t: number;
   windowPages: number;
   label: string;
+  /** sort=「最新」直取页（分类页默认排序，必须预热，否则默认路径永远冷启动） */
+  directPg?: number;
 }
 
 /** 从 DEFAULT_SOURCES 解析预置源（与前端 /api/status 下发的是同一份配置） */
@@ -97,6 +102,8 @@ function warmTargets(): WarmTarget[] {
       if (!subs) continue;
       for (const sub of subs) {
         out.push({ source, base, t: sub.t, windowPages: SORT_WINDOW_PAGES, label: `${cat}/${sub.name}(排序)` });
+        // 「最新」直取第一页：分类页默认排序，历史上完全没缓存（用户默认路径 2.5s+ 的根源）
+        out.push({ source, base, t: sub.t, windowPages: 0, directPg: 1, label: `${cat}/${sub.name}(最新)` });
         if (wantArea) {
           out.push({ source, base, t: sub.t, windowPages: AREA_WINDOW_PAGES, label: `${cat}/${sub.name}(地区)` });
         }
@@ -107,8 +114,20 @@ function warmTargets(): WarmTarget[] {
 }
 
 async function refreshOne(target: WarmTarget, filterAdult: boolean): Promise<void> {
-  const key = windowCacheKey(target.base, target.t, target.windowPages, filterAdult);
   try {
+    if (target.directPg) {
+      // 「最新」直取页：短 TTL 缓存（默认 10 分钟），保新鲜度
+      const key = directCacheKey(target.base, target.t, target.directPg, filterAdult);
+      const page = await fetchDirectPage(target.base, target.source, target.t, target.directPg, filterAdult);
+      if (page && page.list.length > 0) {
+        await cacheSetJson(key, page, DIRECT_TTL_SEC);
+      } else {
+        const why = recentPageFailures().slice(-3).join(' | ') || '无失败记录';
+        console.warn(`[category-warmup] ${target.label} 失败（${why}）`);
+      }
+      return;
+    }
+    const key = windowCacheKey(target.base, target.t, target.windowPages, filterAdult);
     const items = await buildWindow(target.base, target.source, target.t, target.windowPages, filterAdult);
     if (items) {
       await cacheSet(key, items);
