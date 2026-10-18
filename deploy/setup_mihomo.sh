@@ -1,7 +1,7 @@
 #!/bin/sh
 # view163: 用用户订阅在服务器起 mihomo 代理，供 app 采集走干净出口
-# 路由策略：完全镜像本地 Clash —— mode: global + fake-ip 远程解析 DNS，
-#          所有流量走 vless 节点，绕开 GFW 投毒/区域不可达，10 源全通。
+# 路由策略：镜像本地 Clash 的「规则模式」—— 国内 5 源 DIRECT、其余走 vless 节点，
+#          fake-ip 远程解析绕开 GFW 投毒。
 # 不依赖 geoip.mmdb（避免 mihomo 启动下载卡死）
 set -e
 
@@ -83,17 +83,25 @@ L = []
 L.append("mixed-port: 7890")
 L.append("allow-lan: true")
 L.append("bind-address: '*'")
-L.append("mode: global")
+L.append("mode: rule")
 L.append("log-level: info")
 L.append("")
-# 完全镜像用户本地 VPN（Clash）行为：所有流量走节点 + fake-ip 远程解析 DNS
-# 节点侧干净出口 + 远程 DNS 绕开 GFW 投毒，故 360/ikun 等被污染/区域不可达源也能复活。
+# 镜像用户本地 Clash 的「规则模式」：国内源直连（阿里云北京到国内源本就快，
+# 比绕海外节点还快），海外/CF 源走节点；fake-ip 让被代理的域名在节点侧远程解析，
+# 绕开 GFW 投毒。国内直连的域名列进 fake-ip-filter，保证拿到真实 IP 走 DIRECT。
 # 不依赖 geoip.mmdb（避免启动下载卡死）。
 L.append("dns:")
 L.append("  enable: true")
 L.append("  enhanced-mode: fake-ip")
 L.append("  fake-ip-range: 198.18.0.1/16")
 L.append("  use-hosts: true")
+L.append("  fake-ip-filter:")
+L.append("    - '*.lan'")
+L.append("    - '+.dyttzyapi.com'")
+L.append("    - '+.ffzy5.tv'")
+L.append("    - '+.apibdzy.com'")
+L.append("    - '+.bfzyapi.com'")
+L.append("    - '+.mdzyapi.com'")
 L.append("  default-nameserver:")
 L.append("    - 223.5.5.5")
 L.append("    - 119.29.29.29")
@@ -140,8 +148,10 @@ L.append("    proxies:")
 for n in names:
     L.append(f'      - "{n}"')
 L.append("")
-# global 模式下 rules 不生效，仅保留 MATCH 兜底（无害）
+# 国内 5 源直连（阿里云北京到它们最快）；其余(CF 站/被污染/区域不可达)沿 MATCH 走节点
 L.append("rules:")
+for d in ["dyttzyapi.com", "ffzy5.tv", "apibdzy.com", "bfzyapi.com", "mdzyapi.com"]:
+    L.append(f"  - DOMAIN-SUFFIX,{d},DIRECT")
 L.append("  - MATCH,PROXY")
 L.append("")
 L.append("external-controller: 127.0.0.1:9090")
