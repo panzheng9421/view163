@@ -1,31 +1,40 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { Header } from '@/components/header';
 import { SiteFooter } from '@/components/site-footer';
 
 export default function AboutPage() {
+  const router = useRouter();
+  // 从站内点进来就回上一页；直接打开本页（无历史）时回首页，避免点了没反应
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) router.back();
+    else router.push('/');
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
       <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-10 space-y-8">
         <section>
-          <h1 className="text-xl font-bold text-content mb-3">关于 view163</h1>
+          <div className="flex items-center gap-1.5 mb-3">
+            <button
+              type="button"
+              onClick={goBack}
+              aria-label="返回"
+              title="返回"
+              className="-ml-2 p-1.5 rounded-md text-muted transition-colors hover:bg-hover hover:text-content"
+            >
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h1 className="text-xl font-bold text-content">关于 view163</h1>
+          </div>
           <p className="text-sm text-muted leading-relaxed">
             view163 是一个免费的在线视频搜索与观看平台。输入片名即可在多个点播源中聚合搜索，
             无需注册、无内嵌广告、不存储任何视频文件。所有播放内容均来自第三方公开接口。
           </p>
-        </section>
-
-        <section>
-          <h2 className="text-base font-semibold text-content mb-2.5">快捷键</h2>
-          <ul className="text-sm text-muted space-y-1.5 list-disc list-inside">
-            <li><code className="text-accent">空格</code> 播放 / 暂停</li>
-            <li><code className="text-accent">←</code> / <code className="text-accent">→</code> 快退 / 快进 5 秒</li>
-            <li><code className="text-accent">↑</code> / <code className="text-accent">↓</code> 音量调节</li>
-            <li><code className="text-accent">F</code> 切换全屏</li>
-            <li><code className="text-accent">Alt + ←/→</code> 上一集 / 下一集</li>
-            <li>移动端长按视频可 3 倍速播放</li>
-          </ul>
         </section>
 
         <section>

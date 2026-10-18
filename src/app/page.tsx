@@ -217,7 +217,13 @@ function HomeContent() {
     <div className="min-h-screen flex flex-col">
       <Header />
 
-      <main className="relative flex-1 max-w-[1440px] w-full mx-auto px-4 py-6">
+      {/* 顶距：无搜索（首屏 hero）时手机端收紧；带搜索结果时保持原来的 py-6，搜索页不做改动 */}
+      <main
+        className={cn(
+          'relative flex-1 max-w-[1440px] w-full mx-auto px-4',
+          urlQuery ? 'py-6' : 'py-4 sm:py-6'
+        )}
+      >
         {/* 首屏氛围：多层光斑 mesh 渐变，营造影院沉浸感（纯 CSS，不依赖外部图） */}
         {!urlQuery && (
           <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[600px] -z-10 overflow-hidden">
@@ -237,10 +243,11 @@ function HomeContent() {
           </div>
         )}
 
-        {/* 搜索区 */}
-        <section className={cn('flex flex-col items-center', urlQuery ? 'mb-6' : 'mt-16 mb-10')}>
+        {/* 搜索区：手机端顶栏只有两行且没有热搜，标题继续下压会白占一屏，
+            故手机上几乎贴着顶栏起（mt-4），桌面维持原来的呼吸感（sm:mt-16） */}
+        <section className={cn('flex flex-col items-center', urlQuery ? 'mb-6' : 'mt-4 sm:mt-16 mb-10')}>
           {!urlQuery && (
-            <header className="text-center mb-8">
+            <header className="text-center mb-6 sm:mb-8">
               <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight leading-none mb-4">
                 <span className="brand-gradient">view163</span>
               </h1>
@@ -341,8 +348,10 @@ function HomeContent() {
             )}
           </div>
 
+          {/* 热门搜索：仅桌面展示。手机上 7 个完整片名会换行堆成三行（约 118px），
+              把首屏内容全挤下去，且手机用户更习惯直接搜或从下方滑轨点进去 */}
           {!urlQuery && (
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <div className="mt-6 hidden md:flex flex-wrap items-center justify-center gap-2">
               <span className="text-xs text-faint mr-1">热门搜索</span>
               {HOT_KEYWORD_SOURCES.map((config) => (
                 <HotKeywordPill key={config.key} config={config} onPick={runSearch} />
@@ -430,9 +439,10 @@ function HomeContent() {
           </section>
         )}
 
-        {/* 首页推荐（有搜索时隐藏）：按分类横向滑轨分区 */}
+        {/* 首页推荐（有搜索时隐藏）：按分类横向滑轨分区。
+            手机端没有「热门搜索」占位，收窄与搜索区的间距，让片单整体上提 */}
         {!urlQuery && (
-          <div className="mt-14">
+          <div className="mt-8 sm:mt-14">
             <RecommendSection
               onPick={(title) => {
                 setInput(title);

@@ -86,8 +86,8 @@ function ExploreContent() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 py-6">
-        <div className="flex items-center gap-3 mb-6">
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 py-3 sm:py-6">
+        <div className="flex items-center gap-3 mb-4 sm:mb-6">
           <button
             type="button"
             aria-label="返回"

@@ -41,7 +41,7 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
   return (
     <>
       <header className="sticky top-0 z-40 bg-surface/90 backdrop-blur border-b border-line">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 h-14 flex items-center gap-2 sm:gap-3">
           <Link href="/" aria-label="view163 首页" className="flex items-center gap-2 shrink-0">
             {/* 品牌图标：圆角方盒 + 播放三角，与首页 hero 同一套渐变 */}
             <span
@@ -57,6 +57,24 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
               view163
             </span>
           </Link>
+
+          {/* 手机端：分类并入同一行，整条顶栏只占一行；超宽时可横向滑动（滚动条隐藏） */}
+          <nav
+            aria-label="分类导航"
+            className="flex md:hidden items-center gap-0.5 flex-1 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>a]:shrink-0"
+          >
+            <HeaderLink href="/" active={pathname === '/'} compact>
+              首页
+            </HeaderLink>
+            {CATEGORY_ORDER.map((cat) => {
+              const slug = CATEGORY_TO_SLUG[cat];
+              return (
+                <HeaderLink key={cat} href={`/category/${slug}`} active={activeCatSlug === slug} compact>
+                  {cat}
+                </HeaderLink>
+              );
+            })}
+          </nav>
 
           {/* 主导航：与工具图标分组，置于品牌区右侧 */}
           <nav className="hidden md:flex items-center gap-0.5 ml-1">
@@ -127,60 +145,63 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
             </form>
           )}
 
-          <div className="flex-1 sm:hidden" />
-
-          <nav className="flex items-center gap-1 ml-auto">
-            {/* 窄屏回退：主导航在 md 以下隐藏，关于入口在右侧保留（首页点 logo） */}
-            <div className="flex md:hidden items-center gap-0.5">
+          <nav className="flex items-center gap-1 shrink-0 ml-auto">
+            {/* 桌面端：关于 + 主题 + 观看历史 + 下载管理 全部留在顶栏 */}
+            <div className="hidden md:flex items-center gap-0.5">
               <HeaderLink href="/about" active={pathname === '/about'}>
                 关于
               </HeaderLink>
             </div>
             <span className="hidden md:block w-px h-5 bg-line mx-1" />
-            <ThemeToggle />
-            <IconButton label="观看历史" onClick={() => setHistoryOpen(true)}>
-              <Icon name="clock" />
-            </IconButton>
-            <IconButton label="下载管理" onClick={requestShowDownloadManager}>
-              <Icon name="download" />
-            </IconButton>
+            <div className="hidden md:flex items-center gap-1">
+              <ThemeToggle />
+              <IconButton label="观看历史" onClick={() => setHistoryOpen(true)}>
+                <Icon name="clock" />
+              </IconButton>
+              <IconButton label="下载管理" onClick={requestShowDownloadManager}>
+                <Icon name="download" />
+              </IconButton>
+            </div>
+            {/* 手机端：顶栏只留设置，关于/主题/历史/下载 全部收进设置抽屉的「更多」 */}
             <IconButton label="设置" onClick={() => setSettingsOpen(true)}>
               <Icon name="gear" />
             </IconButton>
           </nav>
         </div>
-
-        {/* 手机端顶部分类条：主导航在 md 以下整体隐藏，分类入口不能没有——
-            第二行横滑（首页 + 四个一级分类），当前项高亮；桌面端不显示 */}
-        <div className="md:hidden border-t border-line">
-          <div className="max-w-6xl mx-auto px-4 h-11 flex items-center gap-1 overflow-x-auto scrollbar-thin [&>a]:shrink-0">
-            <HeaderLink href="/" active={pathname === '/'}>
-              首页
-            </HeaderLink>
-            {CATEGORY_ORDER.map((cat) => {
-              const slug = CATEGORY_TO_SLUG[cat];
-              return (
-                <HeaderLink key={cat} href={`/category/${slug}`} active={activeCatSlug === slug}>
-                  {cat}
-                </HeaderLink>
-              );
-            })}
-          </div>
-        </div>
       </header>
 
-      <SourceManagerDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SourceManagerDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        // 手机端顶栏不再有历史入口：设置抽屉里点「观看历史」→ 关抽屉、开历史面板
+        onOpenHistory={() => {
+          setSettingsOpen(false);
+          setHistoryOpen(true);
+        }}
+      />
       <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </>
   );
 }
 
-function HeaderLink({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
+function HeaderLink({
+  href,
+  active,
+  children,
+  compact = false,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+  /** 手机端单行顶栏用：更小的内边距与字号，给一行塞下五个分类 */
+  compact?: boolean;
+}) {
   return (
     <Link
       href={href}
       className={cn(
-        'px-2.5 py-1.5 rounded-md text-sm transition-colors',
+        'rounded-md transition-colors whitespace-nowrap',
+        compact ? 'px-2 py-1.5 text-[13px]' : 'px-2.5 py-1.5 text-sm',
         active ? 'text-content bg-hover' : 'text-muted hover:text-content'
       )}
     >

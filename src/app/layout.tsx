@@ -33,11 +33,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <head>
-        {/* 首屏前同步主题，避免亮暗闪烁 */}
+        {/* 首屏前同步主题，避免亮暗闪烁。
+            默认值：纯触屏设备（手机/平板，pointer:coarse）深色，桌面跟随系统；
+            老内核不认 pointer 特性时用「窄屏 + 非精细指针」兜底（桌面窄窗 fine 恒为 true，不会误判）。
+            用户手动切换过则以 localStorage 中的选择为准 */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){try{var t=localStorage.getItem('libretv-theme')||'system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})()",
+              "(function(){try{var m=function(q){return window.matchMedia?window.matchMedia(q).matches:false};var touch=m('(pointer: coarse)')||(m('(max-width: 767px)')&&!m('(pointer: fine)'));var t=localStorage.getItem('libretv-theme')||(touch?'dark':'system');var d=t==='dark'||(t==='system'&&m('(prefers-color-scheme: dark)'));document.documentElement.classList.toggle('dark',d);}catch(e){}})()",
           }}
         />
       </head>

@@ -227,7 +227,7 @@ function CategoryContent() {
     <div className="min-h-screen flex flex-col">
       <Header />
 
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 py-6">
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 py-3 sm:py-6">
         {!source && (
           <div className="my-4 rounded-lg border border-line bg-chip px-4 py-3 text-sm text-muted">
             {statusQuery.isLoading
@@ -238,7 +238,7 @@ function CategoryContent() {
 
         {/* 二级子类标签：点击切换 type_id，默认选中第一个 */}
         {subs && subs.length > 1 && (
-          <div className="flex flex-wrap gap-2 my-4">
+          <div className="flex flex-wrap gap-2 my-3 sm:my-4">
             {subs.map((s) => (
               <button
                 key={s.name}
@@ -258,7 +258,7 @@ function CategoryContent() {
 
         {/* 地区行：仅电影类目展示（电影按类型分，无地区维度；电视剧的二级子类本就是地区） */}
         {cat === '电影' && subs && (
-          <div className="flex flex-wrap items-center gap-5 my-3 text-sm">
+          <div className="flex flex-wrap items-center gap-5 my-2 sm:my-3 text-sm">
             {AREA_OPTIONS.map((o) => (
               <button
                 key={o.label}
@@ -279,7 +279,7 @@ function CategoryContent() {
 
         {/* 排序行：文字式标签，当前项高亮（对齐主流影视站） */}
         {subs && (
-          <div className="flex flex-wrap items-center gap-5 my-3 text-sm">
+          <div className="flex flex-wrap items-center gap-5 my-2 sm:my-3 text-sm">
             {SORT_OPTIONS.map((o) => (
               <button
                 key={o.key}

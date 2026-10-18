@@ -3,12 +3,33 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 
 /**
- * 主题上下文：light / dark / system，持久化到 localStorage，默认 dark。
+ * 主题上下文：light / dark / system，持久化到 localStorage。
+ * 默认值按设备区分：手机/平板（纯触屏）深色，桌面跟随系统——
+ * 影视站在小屏上深色观感更好，桌面用户沿用其操作系统偏好。
  * html 上的 .dark 类由 layout 中的内联脚本先行设置（避免首屏闪烁），此处负责后续切换。
  */
 
 export type ThemeChoice = 'light' | 'dark' | 'system';
 const STORAGE_KEY = 'libretv-theme';
+
+/** 是否手机/平板这类纯触屏设备（只有它才默认深色，桌面一律跟随系统） */
+function isTouchDevice(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  if (window.matchMedia('(pointer: coarse)').matches) return true;
+  // 老内核不认 pointer 特性时 matches 恒为 false：用「窄屏 + 非精细指针」兜底。
+  // 桌面窗口拖窄时 pointer: fine 为 true，因此不会被误判成手机
+  return window.matchMedia('(max-width: 767px)').matches && !window.matchMedia('(pointer: fine)').matches;
+}
+
+/** 未手动设置过主题时的默认选择：触屏设备深色，桌面跟随系统（SSR 期无 window，回落 system） */
+function defaultChoice(): ThemeChoice {
+  return isTouchDevice() ? 'dark' : 'system';
+}
+
+/** 当前生效的选择：用户手动设置过以 localStorage 为准，否则走设备默认 */
+function currentChoice(): ThemeChoice {
+  return (localStorage.getItem(STORAGE_KEY) as ThemeChoice | null) || defaultChoice();
+}
 
 interface ThemeContextValue {
   theme: ThemeChoice;
@@ -17,7 +38,7 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: 'system',
+  theme: 'dark',
   resolved: 'dark',
   setTheme: () => {},
 });
@@ -37,19 +58,23 @@ function apply(choice: ThemeChoice): 'light' | 'dark' {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  // 初始值固定 'system'：SSR 无 window，若这里就用 defaultChoice() 会让首帧图标
+  // 与服务端 HTML 不一致（水合告警）；真实选择在下方 effect 里解析，html.dark 已由
+  // layout 内联脚本在首屏前挂好，因此不存在闪烁
   const [theme, setThemeState] = useState<ThemeChoice>('system');
   const [resolved, setResolved] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
-    const stored = (localStorage.getItem(STORAGE_KEY) as ThemeChoice | null) || 'system';
+    const stored = currentChoice();
     setThemeState(stored);
     setResolved(apply(stored));
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = () => {
-      const current = (localStorage.getItem(STORAGE_KEY) as ThemeChoice | null) || 'system';
-      if (current === 'system') {
-        setResolved(apply('system'));
+      // 未手动设置过时，桌面端跟随系统偏好变化；手机端默认深色不随系统变
+      if (!localStorage.getItem(STORAGE_KEY)) {
+        setThemeState(defaultChoice());
+        setResolved(apply(defaultChoice()));
       }
     };
     media.addEventListener('change', onChange);

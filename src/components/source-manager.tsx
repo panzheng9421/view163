@@ -1,9 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { Drawer } from './drawer';
 import { ConfirmDialog } from './confirm-dialog';
 import { Icon, type IconName } from './icon';
+import { useTheme, type ThemeChoice } from './theme';
+import { requestShowDownloadManager } from './download-manager';
 import {
   HealthBadge,
   SearchInput,
@@ -64,7 +67,16 @@ const SECONDARY_TABS: Record<PrimaryTab, { id: SecondaryTab; label: string }[]> 
 
 const TAB_STORAGE_KEY = 'libretv-settings-tab';
 
-export function SourceManagerDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SourceManagerDrawer({
+  open,
+  onClose,
+  onOpenHistory,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** 手机端「更多」里的观看历史入口：历史面板挂在 Header 上，需由上层打开 */
+  onOpenHistory?: () => void;
+}) {
   const [primary, setPrimary] = useState<PrimaryTab>('prefs');
   const [secondary, setSecondary] = useState<Record<PrimaryTab, SecondaryTab>>({
     sources: 'vod',
@@ -137,15 +149,22 @@ export function SourceManagerDrawer({ open, onClose }: { open: boolean; onClose:
       }
     >
       {current === 'vod' && <VodSourcesPanel />}
-      {current === 'playback' && <PlaybackPanel />}
+      {current === 'playback' && <PlaybackPanel onClose={onClose} />}
       {current === 'image' && <ImagePanel />}
       {current === 'home' && <HomePanel />}
       {current === 'subs' && <SourceSubscriptions />}
       {current === 'io' && <ConfigIoPanel />}
-      {current === 'profile' && <AccountPanel />}
+      {current === 'profile' && <AccountPanel onOpenHistory={onOpenHistory} onClose={onClose} />}
     </Drawer>
   );
 }
+
+/**
+ * 手机端所需入口已按语义归位：
+ * - 主题 → 偏好设置 / 外观
+ * - 关于本站 → 偏好设置 / 关于（仅手机端）
+ * - 观看历史、下载管理 → 我的账号 / 我的内容（仅手机端）
+ */
 
 /** 一级/二级导航条（role=tablist，左右方向键切换） */
 function TabRow<T extends string>({
@@ -546,81 +565,241 @@ function VodSourceRow({
 
 // —— 偏好设置面板 ——
 
-function PlaybackPanel() {
+/**
+ * 设置分组：标题在卡片外，卡内只用分隔线，不逐条加框。
+ * 抽屉底色是 surface-raised，卡片用 page 色 + 一层边框，靠明度差区分「组」与「项」。
+ */
+function SettingsGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <h3 className="px-1 mb-2 text-xs font-medium text-faint">{title}</h3>
+      <div className="rounded-xl border border-line bg-page divide-y divide-line/60 overflow-hidden">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** 右侧指示箭头（可随展开状态旋转 90°） */
+function Chevron({ open = false }: { open?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn('w-3.5 h-3.5 shrink-0 text-faint transition-transform', open && 'rotate-90')}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
+/** 组内开关行：标题 + 可选说明，开关靠右 */
+function SettingsToggleRow({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 px-3.5 py-3">
+      <div className="min-w-0">
+        <div className="text-sm text-content">{label}</div>
+        {description && <div className="mt-0.5 text-[11px] leading-relaxed text-faint">{description}</div>}
+      </div>
+      <div className="pt-0.5">
+        <Switch checked={checked} onChange={onChange} label={label} />
+      </div>
+    </div>
+  );
+}
+
+/** 组内跳转行：图标 + 标题 + 右侧箭头 */
+function SettingsLinkRow({
+  icon,
+  label,
+  onClick,
+}: {
+  icon?: IconName;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left transition-colors hover:bg-hover/60"
+    >
+      {icon && <Icon name={icon} className="w-4 h-4 shrink-0 text-muted" />}
+      <span className="flex-1 text-sm text-content">{label}</span>
+      <Chevron />
+    </button>
+  );
+}
+
+/** 主题行：显示当前值，点开在卡片内展开单选列表（选中打勾），与组内其它行同一套分隔线 */
+function ThemeRow() {
+  const { theme, setTheme } = useTheme();
+  const [open, setOpen] = useState(false);
+  const options: { id: ThemeChoice; label: string }[] = [
+    { id: 'light', label: '浅色' },
+    { id: 'dark', label: '深色' },
+    { id: 'system', label: '跟随系统' },
+  ];
+  const current = options.find((o) => o.id === theme)?.label ?? '跟随系统';
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className={cn(
+          'flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left transition-colors',
+          open ? 'bg-hover/50' : 'hover:bg-hover/60'
+        )}
+      >
+        <span className="text-sm text-content">主题</span>
+        <span className="flex items-center gap-1.5">
+          <span className="text-xs text-muted">{current}</span>
+          <Chevron open={open} />
+        </span>
+      </button>
+      {open &&
+        options.map((o) => {
+          const active = theme === o.id;
+          // 选中态只做「文字变色 + 勾」，不铺整行底色——整行填充在窄卡片里会变成一大块色带
+          return (
+            <button
+              key={o.id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => {
+                setTheme(o.id);
+                setOpen(false);
+              }}
+              className={cn(
+                'flex w-full items-center justify-between gap-3 pl-6 pr-3.5 py-2 text-left transition-colors',
+                active ? 'cursor-default' : 'hover:bg-hover/60'
+              )}
+            >
+              <span className={cn('text-sm', active ? 'text-accent font-medium' : 'text-content')}>{o.label}</span>
+              <Icon name="check" className={cn('w-4 h-4 shrink-0', active ? 'text-accent' : 'opacity-0')} />
+            </button>
+          );
+        })}
+    </>
+  );
+}
+
+function PlaybackPanel({ onClose }: { onClose: () => void }) {
   const store = useAppStore();
   return (
-    <section>
-      <SectionTitle title="播放与过滤" />
-      <div className="space-y-3">
-        <ToggleRow
+    <section className="space-y-5">
+      <SettingsGroup title="播放">
+        <SettingsToggleRow
           label="广告切片过滤"
-          description="剔除播放列表中的广告分片段落（按分片 URL 特征、片头插入与长片间超短中插识别，不动 DISCONTINUITY 时间轴）"
+          description="剔除播放列表里的广告分片（按分片 URL 特征、片头插入与超短中插识别，不动 DISCONTINUITY 时间轴）"
           checked={store.adFilter}
           onChange={(v) => store.updateSettings({ adFilter: v })}
         />
-        <ToggleRow
+        <SettingsToggleRow
           label="自动连播"
           description="单集播放结束后自动播放下一集"
           checked={store.autoplayNext}
           onChange={(v) => store.updateSettings({ autoplayNext: v })}
         />
+      </SettingsGroup>
+
+      <SettingsGroup title="存储">
+        <VideoCacheRows />
+      </SettingsGroup>
+
+      {/* 外观 / 关于：桌面端顶栏已有主题切换与「关于」入口，这两组只在手机端出现 */}
+      <div className="md:hidden">
+        <SettingsGroup title="外观">
+          <ThemeRow />
+        </SettingsGroup>
       </div>
-      <VideoCachePanel />
+
+      <div className="md:hidden">
+        <SettingsGroup title="关于">
+          <Link
+            href="/about"
+            onClick={onClose}
+            className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-sm text-content transition-colors hover:bg-hover/60"
+          >
+            关于本站
+            <Chevron />
+          </Link>
+        </SettingsGroup>
+      </div>
     </section>
   );
 }
 
-/** 我的账号：访问状态（来自 /api/status）+ 本机数据存储说明 */
-function AccountPanel() {
+/** 我的账号：访问状态（来自 /api/status）+ 我的内容（观看历史 / 下载，仅手机端）+ 本机数据说明 */
+function AccountPanel({ onOpenHistory, onClose }: { onOpenHistory?: () => void; onClose: () => void }) {
   const { checked, verified, setupRequired, version, openLogin, logout } = useAuth();
+  const statusText = !checked ? '检测中…' : setupRequired ? '公开访问' : verified ? '已登录' : '未登录';
 
   return (
-    <section>
-      <SectionTitle title="我的账号" />
-      <div className="space-y-3">
-        <div className="rounded-lg border border-line p-3 space-y-2">
-          <div className="text-sm font-medium text-content">访问状态</div>
-          {!checked ? (
-            <div className="text-xs text-faint">检测中…</div>
-          ) : setupRequired ? (
-            <div className="text-xs text-content">站点未设置访问密码（公开访问）</div>
-          ) : verified ? (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-content">已登录</span>
-              <button
-                type="button"
-                onClick={() => void logout()}
-                className="px-2 py-1 rounded bg-chip text-content hover:bg-hover transition-colors"
-              >
-                退出登录
-              </button>
+    <section className="space-y-5">
+      <SettingsGroup title="账号">
+        <div className="px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-content">访问状态</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted">{statusText}</span>
+              {checked &&
+                (setupRequired ? null : verified ? (
+                  <button type="button" onClick={() => void logout()} className="text-xs text-accent hover:underline">
+                    退出登录
+                  </button>
+                ) : (
+                  <button type="button" onClick={openLogin} className="text-xs text-accent hover:underline">
+                    登录
+                  </button>
+                ))}
             </div>
-          ) : (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-content">未登录</span>
-              <button
-                type="button"
-                onClick={openLogin}
-                className="px-2 py-1 rounded bg-chip text-content hover:bg-hover transition-colors"
-              >
-                登录
-              </button>
-            </div>
-          )}
-          {version && <div className="text-xs text-faint">版本 v{version}</div>}
+          </div>
+          {version && <div className="mt-1 text-[11px] text-faint">版本 v{version}</div>}
         </div>
+      </SettingsGroup>
 
-        <div className="rounded-lg border border-line p-3 space-y-2">
-          <div className="text-sm font-medium text-content">本机数据</div>
-          <div className="text-[11px] text-faint">偏好设置与观看进度保存在你当前浏览器（IndexedDB），换设备不会共享</div>
-        </div>
+      {/* 我的内容：桌面端顶栏已有历史/下载入口，这里只在手机端出现 */}
+      <div className="md:hidden">
+        <SettingsGroup title="我的内容">
+          <SettingsLinkRow icon="clock" label="观看历史" onClick={() => onOpenHistory?.()} />
+          <SettingsLinkRow
+            icon="download"
+            label="下载管理"
+            onClick={() => {
+              onClose();
+              requestShowDownloadManager();
+            }}
+          />
+        </SettingsGroup>
       </div>
+
+      <SettingsGroup title="本机数据">
+        <div className="px-3.5 py-3 text-[11px] leading-relaxed text-faint">
+          偏好设置与观看进度保存在你当前浏览器（IndexedDB），换设备不会共享
+        </div>
+      </SettingsGroup>
     </section>
   );
 }
 
-/** 片段缓存：开启/关闭 + 用量展示 + 清理（数据在浏览器本地，独立于配置导出） */
-function VideoCachePanel() {
+/** 片段缓存：开关 + 用量 + 清理（数据在浏览器本地，独立于配置导出）。渲染为组内两行 */
+function VideoCacheRows() {
   const [enabled, setEnabled] = useState(() => loadCacheSettings().enabled);
   const [summary, setSummary] = useState<CacheSummary>({ segments: 0, bytes: 0, episodes: 0 });
   const [clearing, setClearing] = useState(false);
@@ -640,23 +819,23 @@ function VideoCachePanel() {
   };
 
   return (
-    <div className="space-y-3 pt-3 mt-3 border-t border-line">
-      <ToggleRow
+    <>
+      <SettingsToggleRow
         label="片段本地缓存"
-        description="暂停或观看时把后续分片缓存到浏览器本地，二次播放与断网卡顿时直接命中（存储于本机，不计入配置导出）"
+        description="暂停或观看时把后续分片缓存到浏览器本地，二次播放与断网卡顿时直接命中（存本机，不计入配置导出）"
         checked={enabled}
         onChange={(v) => {
           const next = saveCacheSettings({ enabled: v });
           setEnabled(next.enabled);
         }}
       />
-      <div className="flex items-center justify-between text-xs text-faint">
-        <span>
+      <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+        <span className="text-[11px] text-faint">
           已缓存 {summary.segments} 个分片 · {formatBytes(summary.bytes)} · {summary.episodes} 集
         </span>
         <button
           type="button"
-          className="px-2 py-1 rounded bg-chip text-content hover:bg-hover transition-colors disabled:opacity-50"
+          className="shrink-0 text-xs text-accent hover:underline disabled:text-faint disabled:no-underline disabled:cursor-not-allowed"
           disabled={clearing || summary.segments === 0}
           onClick={async () => {
             setClearing(true);
@@ -665,10 +844,10 @@ function VideoCachePanel() {
             setClearing(false);
           }}
         >
-          清理缓存
+          {clearing ? '清理中…' : '清理'}
         </button>
       </div>
-    </div>
+    </>
   );
 }
 
