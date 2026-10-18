@@ -140,14 +140,20 @@ describe('成人内容过滤', () => {
   it('识别敏感分类', () => {
     expect(isAdultContent('伦理片')).toBe(true);
     expect(isAdultContent('福利片')).toBe(true);
+    expect(isAdultContent('写真热舞')).toBe(true);
+    expect(isAdultContent('写真')).toBe(true);
+    expect(isAdultContent('热舞')).toBe(true);
+    expect(isAdultContent('秀人')).toBe(true);
     expect(isAdultContent('科幻片')).toBe(false);
+    expect(isAdultContent('剧情片')).toBe(false);
+    expect(isAdultContent('综艺')).toBe(false);
     expect(isAdultContent(undefined)).toBe(false);
   });
 
   it('filterAdultResults 按开关过滤', () => {
-    const items = [{ typeName: '伦理片' }, { typeName: '剧情片' }];
+    const items = [{ typeName: '伦理片' }, { typeName: '写真热舞' }, { typeName: '剧情片' }];
     expect(filterAdultResults(items, true)).toEqual([{ typeName: '剧情片' }]);
-    expect(filterAdultResults(items, false)).toHaveLength(2);
+    expect(filterAdultResults(items, false)).toHaveLength(3);
   });
 });
 

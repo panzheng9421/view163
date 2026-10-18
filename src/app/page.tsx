@@ -15,6 +15,7 @@ import {
   toHealthHints,
 } from '@/lib/store';
 import { api } from '@/lib/client-api';
+import { filterAdultResults } from '@/lib/cms-parser';
 import type { SearchResultItem, SourceSearchOutcome } from '@/lib/types';
 import { SearchHistoryDropdown, useSearchHistory } from '@/components/search-history';
 import { cn, validateSourceUrl } from '@/lib/utils';
@@ -187,10 +188,12 @@ function HomeContent() {
   };
 
   const isSearching = Boolean(urlQuery) && searchQuery.isFetching && !searchQuery.data;
-  // 聚合数据未就绪时，用已结算源的结果增量渲染（健康源不再等坏源超时）
+  // 聚合数据未就绪时，用已结算源的结果增量渲染（健康源不再等坏源超时）。
+  // 增量段同样要遵守成人过滤：开关开着时，「边搜边显」的过程也不露成人卡片
+  // （最终结果由服务端 filterAdultResults 过滤，这里只管 done 到达前那一段）
   const streamedList = useMemo(
-    () => streamedOutcomes.flatMap((o) => o.list),
-    [streamedOutcomes]
+    () => filterAdultResults(streamedOutcomes.flatMap((o) => o.list), yellowFilter),
+    [streamedOutcomes, yellowFilter]
   );
   const list = useMemo(
     () => searchQuery.data?.list ?? (isSearching ? streamedList : []),

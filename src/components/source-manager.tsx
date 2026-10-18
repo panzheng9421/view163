@@ -680,7 +680,7 @@ function HomePanel() {
       <div className="space-y-3">
         <ToggleRow
           label="成人内容过滤"
-          description="过滤“伦理片”等分类的结果"
+          description="过滤“伦理片”“写真热舞”等分类的结果"
           checked={store.yellowFilter}
           onChange={(v) => store.updateSettings({ yellowFilter: v })}
         />
