@@ -1,0 +1,15 @@
+name = "view163-proxy"
+main = "proxy-worker.js"
+compatibility_date = "2024-09-23"
+
+# 如需绑定自定义子域（view163.com 在 Cloudflare 管理时）：
+# routes = [
+#   { pattern = "proxy.view163.com/*", zone_name = "view163.com" }
+# ]
+# 否则部署后用默认的 <name>.<your-subdomain>.workers.dev
+
+# 部署：在 deploy/ 目录下
+#   CLOUDFLARE_API_TOKEN=<token> npx wrangler deploy
+# 之后把服务器 /opt/view163/.env 的 DEFAULT_SOURCES 里每个源的 url 改为：
+#   https://<worker-address>/<原host>/api.php/provide/vod
+# 例：https://view163-proxy.xxx.workers.dev/bfzyapi.com/api.php/provide/vod

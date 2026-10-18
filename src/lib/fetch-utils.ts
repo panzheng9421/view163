@@ -48,6 +48,33 @@ const upstreamFetch: typeof fetch = proxyDispatcher
 /** 是否配置了 UPSTREAM_PROXY：调用方可据此决定「直连优先、代理兜底」的双路策略 */
 export const hasUpstreamProxy = Boolean(proxyDispatcher);
 
+/**
+ * 站内采集反代：容器里的 Node(undici) 直连源站会被 Cloudflare 按 TLS 指纹拦截
+ * （curl/nginx 的 OpenSSL 指纹能过、Node 秒级 fetch failed）。
+ * 设了 INGEST_PROXY_BASE（如 http://host.docker.internal:18080，指向宿主机 nginx 的
+ * /__proxy/ 反代口）时，把采集接口请求改走本机——由 nginx 用 OpenSSL 指纹去拉源站。
+ *
+ * 只改写 `api.php` 采集接口：媒体 m3u8/ts 必须保持原样（CDN 拒代理出口且无需伪装指纹）。
+ * 源配置里的域名不变，因此分类体系（按源域名匹配）与前端展示完全不受影响。
+ */
+const INGEST_PROXY_BASE = (process.env.INGEST_PROXY_BASE || '').trim().replace(/\/+$/, '');
+
+function toIngestProxy(url: string): string {
+  if (!INGEST_PROXY_BASE) return url;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return url;
+  }
+  if (!u.pathname.includes('/api.php')) return url;
+  return `${INGEST_PROXY_BASE}/__proxy/${u.hostname}${u.pathname}${u.search}`;
+}
+
+function isIngestProxyUrl(url: string): boolean {
+  return Boolean(INGEST_PROXY_BASE) && url.startsWith(`${INGEST_PROXY_BASE}/__proxy/`);
+}
+
 /** 按方向选出网方式：noProxy 时强制直连，忽略 UPSTREAM_PROXY */
 const pickFetch = (noProxy: boolean): typeof fetch =>
   noProxy && proxyDispatcher ? fetch : upstreamFetch;
@@ -95,16 +122,20 @@ export async function fetchWithSafeRedirects(
     else init.signal.addEventListener('abort', () => controller.abort(init.signal?.reason), { once: true });
   }
   for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
-    const verdict = allowPrivate
-      ? await checkLiveUrlAllowed(current)
-      : await checkUpstreamAllowed(current);
+    // 采集接口改走本机反代（见 INGEST_PROXY_BASE 说明）；其他地址原样直连
+    const target = toIngestProxy(current);
+    const verdict: { ok: boolean; reason?: string } = isIngestProxyUrl(target)
+      ? { ok: true }
+      : allowPrivate
+        ? await checkLiveUrlAllowed(target)
+        : await checkUpstreamAllowed(target);
     if (!verdict.ok) {
       throw new Error(`跳转目标被拒绝: ${verdict.reason}`);
     }
     const timer = headerTimeoutMs ? setTimeout(() => controller.abort(), headerTimeoutMs) : null;
     let res: Response;
     try {
-      res = await doFetch(current, { ...init, signal: controller.signal, redirect: 'manual' });
+      res = await doFetch(target, { ...init, signal: controller.signal, redirect: 'manual' });
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -139,7 +170,7 @@ export async function fetchUpstreamWithMeta(url: string, options: FetchOptions =
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       if (!safeRedirects) {
-        const res = await pickFetch(noProxy)(url, {
+        const res = await pickFetch(noProxy)(toIngestProxy(url), {
           ...init,
           signal,
           redirect: init.redirect ?? 'follow',

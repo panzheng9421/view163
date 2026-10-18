@@ -10,6 +10,9 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    # 让容器能用 host.docker.internal 访问宿主机（站内采集反代口 18080 在宿主机 nginx 上）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # 无状态服务：观看历史在浏览器 IndexedDB、设置在 localStorage，无需挂载卷
     environment:
       # 访问密码（在 .env 中设置）。公网部署务必设置；仅内网/自用且已开 DISABLE_AUTH 时可不设。
@@ -39,6 +42,11 @@ services:
       - SEARCH_SOURCE_TIMEOUT_MS=${SEARCH_SOURCE_TIMEOUT_MS:-10000}
       # 可选：分类页单页上游超时（毫秒，默认 9000）。源站在境外/慢链路时可调大到 20000
       - CATEGORY_PAGE_TIMEOUT_MS=${CATEGORY_PAGE_TIMEOUT_MS:-9000}
+      # 可选：站内采集反代地址（宿主 nginx 的 /__proxy/ 口）。
+      # 容器里的 Node 直连部分源站会被 Cloudflare 按 TLS 指纹拦截，走这条由 nginx 的
+      # OpenSSL 指纹代拉。只影响采集接口（api.php），媒体流不受影响。
+      # 例：http://host.docker.internal:18080
+      - INGEST_PROXY_BASE=${INGEST_PROXY_BASE:-}
       # 可选：代理请求 UA（豆瓣防盗链等场景）
       # - USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36
       # 可选：影视榜单推荐源（60s API）实例地址，官方公共实例有限流
