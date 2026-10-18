@@ -225,9 +225,24 @@ function Rail({
           <span className="inline-block w-1 h-4 rounded-full bg-gradient-to-b from-accent to-fuchsia-500" />
           {title}
         </h2>
-        <div className="hidden sm:flex items-center gap-1">
-          <RailArrow dir="left" disabled={!canLeft} onClick={() => page(-1)} />
-          <RailArrow dir="right" disabled={!canRight} onClick={() => page(1)} />
+        {/* 右侧操作区：手机端无左右箭头，只留「更多」入口——
+            否则滑轨末尾那张「查看更多」虚线卡要划完 24 张才看得到，全量页等于不可达 */}
+        <div className="flex items-center gap-2">
+          {moreHref && (
+            <Link
+              href={moreHref}
+              className="inline-flex items-center gap-0.5 text-xs text-muted transition-colors hover:text-accent"
+            >
+              更多
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6l6 6-6 6" />
+              </svg>
+            </Link>
+          )}
+          <div className="hidden sm:flex items-center gap-1">
+            <RailArrow dir="left" disabled={!canLeft} onClick={() => page(-1)} />
+            <RailArrow dir="right" disabled={!canRight} onClick={() => page(1)} />
+          </div>
         </div>
       </div>
 
