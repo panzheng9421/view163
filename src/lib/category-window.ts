@@ -48,7 +48,16 @@ const PAGE_BATCH = (() => {
 
 /** 最近失败的页（诊断用：预热没覆盖全时看这里，只保留最近 30 条） */
 const pageFailures: string[] = [];
+/** 最近一次源站限流（429）的时间：预热据此退避，别再往枪口上撞 */
+let lastRateLimitAt = 0;
+
+/** 60 秒内出现过 429 = 源站还在限流，预热应该让路 */
+export function hitRateLimit(): boolean {
+  return Date.now() - lastRateLimitAt < 60_000;
+}
+
 function noteFailure(t: number, pg: number, why: string): void {
+  if (why.startsWith('HTTP 429')) lastRateLimitAt = Date.now();
   pageFailures.push(`t${t}/pg${pg}: ${why}`);
   if (pageFailures.length > 30) pageFailures.shift();
 }

@@ -14,13 +14,32 @@
  */
 import { CATEGORY_ORDER, getSubCategories } from './categories';
 import { cacheSet } from './category-cache';
-import { AREA_WINDOW_PAGES, SORT_WINDOW_PAGES, buildWindow, recentPageFailures, windowCacheKey } from './category-window';
+import {
+  AREA_WINDOW_PAGES,
+  SORT_WINDOW_PAGES,
+  buildWindow,
+  hitRateLimit,
+  recentPageFailures,
+  windowCacheKey,
+} from './category-window';
 import type { SourceConfig } from './types';
 
 /** 预热周期，默认 6 小时（远小于 30 天 TTL，只做日级保鲜） */
 const WARM_INTERVAL_MS = (() => {
   const n = parseInt(process.env.CATEGORY_WARM_INTERVAL_MS || '', 10);
   return Number.isFinite(n) && n >= 60_000 ? n : 6 * 60 * 60 * 1000;
+})();
+
+/** 每个窗口之间的间隔（默认 1.2s）：温和刷新，别把源站打到 429 */
+const WARM_GAP_MS = (() => {
+  const n = parseInt(process.env.CATEGORY_WARM_GAP_MS || '1200', 10);
+  return Number.isFinite(n) && n >= 0 && n <= 60_000 ? n : 1200;
+})();
+
+/** 命中 429 后的退避时长（默认 90s）：等源站限流窗口过去 */
+const WARM_BACKOFF_MS = (() => {
+  const n = parseInt(process.env.CATEGORY_WARM_BACKOFF_MS || '90000', 10);
+  return Number.isFinite(n) && n >= 1000 && n <= 600_000 ? n : 90_000;
 })();
 
 /** 同时预热的窗口数（每个窗口内部还会分批并发拉页，故这里刻意保守，默认串行） */
@@ -58,10 +77,18 @@ function presetSources(): SourceConfig[] {
 }
 
 /**
- * 枚举全部预热目标：源 × 该源全部分类标签 × {排序窗口, 地区窗口}。
- * 只保留在 CATEGORY_MAP 里有映射的源（没映射 = 该源不支持分类浏览，刷了也没人用）。
+ * 枚举全部预热目标：源 × 该源全部分类标签 × 窗口。
+ *
+ * 默认只预热「排序窗口」（3 页/分类，26 个分类共 78 个页请求）——覆盖所有分类 tab 的
+ * score/hot/new 三种排序，一两分钟跑完，不会把源站打到限流。
+ *
+ * 地区窗口（25 页/分类，26 个分类 = 650+ 页请求）默认**不预热**：实测全量预热带 429 限流，
+ * 把用户请求一起害死（用户看到的就是 5 秒+失败）。地区筛选是低频操作，用户首次选中
+ * 冷启动一次（3~9s）后进缓存 30 天，比「预热把源站打到限流、大家一起失败」划算。
+ * 确实要全预热可设 CATEGORY_WARM_AREA=1（配合下面的 gap/退避使用）。
  */
 function warmTargets(): WarmTarget[] {
+  const wantArea = process.env.CATEGORY_WARM_AREA === '1';
   const out: WarmTarget[] = [];
   for (const source of presetSources()) {
     const base = source.url.replace(/\/+$/, '');
@@ -70,7 +97,9 @@ function warmTargets(): WarmTarget[] {
       if (!subs) continue;
       for (const sub of subs) {
         out.push({ source, base, t: sub.t, windowPages: SORT_WINDOW_PAGES, label: `${cat}/${sub.name}(排序)` });
-        out.push({ source, base, t: sub.t, windowPages: AREA_WINDOW_PAGES, label: `${cat}/${sub.name}(地区)` });
+        if (wantArea) {
+          out.push({ source, base, t: sub.t, windowPages: AREA_WINDOW_PAGES, label: `${cat}/${sub.name}(地区)` });
+        }
       }
     }
   }
@@ -94,14 +123,27 @@ async function refreshOne(target: WarmTarget, filterAdult: boolean): Promise<voi
   }
 }
 
-/** 限量并发跑任务队列（窗口之间串行推进，避免并发拉爆源站） */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 限量并发跑任务队列：
+ * - 窗口之间留间隔（WARM_GAP_MS）：别把源站按着打，密集请求实测触发 429 限流
+ * - 命中 429（hitRateLimit）主动退避（WARM_BACKOFF_MS）：限流期间用户请求也会失败，预热必须让路
+ */
 async function runLimited(tasks: Array<() => Promise<void>>, limit: number): Promise<void> {
   let cursor = 0;
   const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
     for (;;) {
       const idx = cursor++;
       if (idx >= tasks.length) return;
+      if (hitRateLimit()) {
+        console.warn(`[category-warmup] 源站限流中，退避 ${(WARM_BACKOFF_MS / 1000).toFixed(0)}s 再继续`);
+        await sleep(WARM_BACKOFF_MS);
+      }
       await tasks[idx]();
+      await sleep(WARM_GAP_MS);
     }
   });
   await Promise.all(workers);
