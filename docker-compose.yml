@@ -19,8 +19,10 @@ services:
       # 可选：Cookie Secure 策略覆盖（true=强制开启 / false=强制关闭；不设置时按请求协议自动推导，HTTP 部署无需配置）
       # - COOKIE_SECURE=true
       # 必填（否则全站空）：预置采集站（JSON 数组），用户端自动出现且默认勾选。
-      # 下面是实测可用示例，可换成你信任的源；isAdult 标 true 的源会被服务端过滤。
-      # - DEFAULT_SOURCES=[{"name":"示例源","url":"https://bfzyapi.com/api.php/provide/vod","detail":"https://bfzyapi.com","isAdult":false}]
+      # 实测可用示例（可换成你信任的源；isAdult 标 true 的源会被服务端过滤）：
+      #   [{"name":"bfzy","url":"https://bfzyapi.com/api.php/provide/vod","detail":"https://bfzyapi.com","isAdult":false}]
+      # 从 .env 读取并注入容器；.env 若为空则全站无内容。
+      - DEFAULT_SOURCES=${DEFAULT_SOURCES}
       # 可选：预置数据源订阅（SourceList JSON 链接，一次下发点播源 + 直播源）
       # - DEFAULT_SUBSCRIPTIONS=["https://example.com/sources.json"]
       # 可选：首页推荐数据源默认值（douban / bangumi / hot-list），仅对未主动选择过的用户生效
