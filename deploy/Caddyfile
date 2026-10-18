@@ -1,0 +1,17 @@
+# Caddy 反代配置（推荐：自动申请/续期 Let's Encrypt 证书，零配置 HTTPS）
+# 用法：
+#   1. 安装 Caddy：https://caddyserver.com/docs/install
+#   2. 把本文件存为 /etc/caddy/Caddyfile（或 caddy run --config Caddyfile）
+#   3. 确保域名 view163.com 已解析到本机公网 IP，80/443 端口在安全组开放
+#
+# Caddy 会自动为下面域名申请证书并强制跳转 HTTPS，无需手动配证书。
+
+view163.com {
+    # 反代到本地容器（docker-compose 已把容器 8080 映射到宿主机 8080）
+    reverse_proxy localhost:8080
+}
+
+# 如需同时托管 www 前缀，加一段：
+# www.view163.com {
+#     redir https://view163.com{uri} permanent
+# }

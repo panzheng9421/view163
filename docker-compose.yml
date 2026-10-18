@@ -1,11 +1,11 @@
 services:
   libretv:
     build: .
-    # 版本管理：镜像 tag 与 package.json 的 version 保持一致
-    # - 使用者：不设置 LIBRETV_IMAGE 即拉取 ghcr.io/librespark/libretv:latest（首次部署用 docker compose pull）
-    # - 开发者：docker compose up -d --build 会在本地构建并打上同名 tag
-    # - 需要固定版本时设置 LIBRETV_IMAGE=ghcr.io/librespark/libretv:2.0.1
-    image: ${LIBRETV_IMAGE:-ghcr.io/librespark/libretv:latest}
+    # ⚠️ 本项目是 LibreTV 的二开（view163），必须始终用 `docker compose up -d --build`
+    # 在本地构建二开代码，切勿拉取上游镜像。默认 image 设为本地标签 view163:latest，
+    # 即使漏写 --build 也只会因找不到本地镜像而报错，不会误拉上游 LibreTV 代码。
+    # - 需要固定版本时：先 build 后再 `docker tag view163:latest your-registry/view163:vX.Y.Z`
+    image: ${LIBRETV_IMAGE:-view163:latest}
     container_name: libretv
     restart: unless-stopped
     ports:
@@ -18,14 +18,13 @@ services:
       # - PROXY_SECRET=your-secret
       # 可选：Cookie Secure 策略覆盖（true=强制开启 / false=强制关闭；不设置时按请求协议自动推导，HTTP 部署无需配置）
       # - COOKIE_SECURE=true
-      # 可选：预置采集站（JSON 数组），用户端自动出现且默认勾选
-      # - DEFAULT_SOURCES=[{"name":"示例源","url":"https://example.com/api.php/provide/vod"}]
+      # 必填（否则全站空）：预置采集站（JSON 数组），用户端自动出现且默认勾选。
+      # 下面是实测可用示例，可换成你信任的源；isAdult 标 true 的源会被服务端过滤。
+      # - DEFAULT_SOURCES=[{"name":"示例源","url":"https://bfzyapi.com/api.php/provide/vod","detail":"https://bfzyapi.com","isAdult":false}]
       # 可选：预置数据源订阅（SourceList JSON 链接，一次下发点播源 + 直播源）
       # - DEFAULT_SUBSCRIPTIONS=["https://example.com/sources.json"]
       # 可选：首页推荐数据源默认值（douban / bangumi / hot-list），仅对未主动选择过的用户生效
       # - DEFAULT_RECOMMEND_SOURCE=douban
-      # 可选：自建内网 IPTV 放行（对拉列表、测活、拉流三个阶段同时生效，默认关闭以维持 SSRF 防护）
-      # - LIVE_ALLOW_PRIVATE=1
       # 可选：代理上游请求超时（毫秒）与重试次数
       # - REQUEST_TIMEOUT=8000
       # - MAX_RETRIES=1
