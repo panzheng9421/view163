@@ -8,6 +8,8 @@ view163 是一个自用定制的影视聚合站：把多个采集站的内容在
 
 技术栈：Next.js 15（App Router） + TypeScript + Tailwind CSS，播放内核为 ArtPlayer + hls.js，支持亮暗双主题，可安装为 PWA。
 
+![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white) ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-06B6D4?logo=tailwindcss&logoColor=white) ![ArtPlayer](https://img.shields.io/badge/ArtPlayer-5.2-FF6B35) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey)
+
 ## 核心特性
 
 - **聚合搜索**：多采集站服务端并行搜索，个别源失败不影响整体结果
@@ -74,25 +76,25 @@ PASSWORD=dev-password npm run dev   # http://localhost:8080
 
 ### 环境变量
 
-| 变量 | 必填 | 说明 |
-| --- | --- | --- |
-| `PASSWORD` | 是 | 访问密码；未设置时站点会提示管理员配置 |
-| `PROXY_SECRET` | 否 | 会话/代理签名密钥；不设置时从 PASSWORD 派生（多实例部署建议显式设置） |
-| `DEFAULT_SOURCES` | 否* | 预置点播源（JSON 数组），用户端自动出现且默认启用，如 `[{"name":"示例源","url":"https://example.com/api.php/provide/vod","detail":"https://example.com","isAdult":false}]`。**不填则全站无内容** |
-| `DEFAULT_SUBSCRIPTIONS` | 否 | 预置数据源订阅（LibreTV-SourceList JSON 链接，也接受 TVBOX 配置地址），JSON 数组 |
-| `DEFAULT_RECOMMEND_SOURCE` | 否 | 首页推荐数据源默认值（`douban` / `bangumi` / `hot-list`，出厂默认 `hot-list`）；仅对未在设置中主动选择过的用户生效 |
-| `DISABLE_AUTH` | 否 | 设为 `1` 关闭登录密码（仅限可信内网/本地环境） |
-| `REQUEST_TIMEOUT` | 否 | 代理上游请求超时（毫秒），默认 8000 |
-| `MAX_RETRIES` | 否 | 代理请求重试次数，默认 1 |
-| `SEARCH_MAX_PAGES` | 否 | 每个搜索源最多抓取的页数（1-50，默认 5） |
-| `SEARCH_SOURCE_TIMEOUT_MS` | 否 | 单个搜索源的总死线（毫秒，3s-60s，默认 10000） |
-| `USER_AGENT` | 否 | 代理请求使用的 UA（豆瓣封面防盗链等场景），默认 Chrome UA |
-| `FALLBACK_CORS_PROXY` | 否 | 豆瓣推荐数据直连被拒时降级使用的 CORS 代理地址 |
-| `COOKIE_SECURE` | 否 | 显式覆盖会话 cookie 的 `Secure` 标记；反向代理未正确传递 `x-forwarded-proto` 导致 HTTPS 下登录失效时，设为 `true` 可解 |
-| `DEFAULT_IMAGE_MODE` | 否 | 图片加载模式（`proxy` / `direct` 等），控制封面是否走代理 |
-| `UPSTREAM_PROXY` | 否 | 服务端拉取上游时的出口代理地址（如 `http://127.0.0.1:7897`），用于源站需要科学上网的场景 |
+| 变量                         | 必填 | 说明                                                                                                                                                           |
+| -------------------------- | -- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PASSWORD`                 | 是  | 访问密码；未设置时站点会提示管理员配置                                                                                                                                          |
+| `PROXY_SECRET`             | 否  | 会话/代理签名密钥；不设置时从 PASSWORD 派生（多实例部署建议显式设置）                                                                                                                     |
+| `DEFAULT_SOURCES`          | 否* | 预置点播源（JSON 数组），用户端自动出现且默认启用，如 `[{"name":"示例源","url":"https://example.com/api.php/provide/vod","detail":"https://example.com","isAdult":false}]`。**不填则全站无内容** |
+| `DEFAULT_SUBSCRIPTIONS`    | 否  | 预置数据源订阅（LibreTV-SourceList JSON 链接，也接受 TVBOX 配置地址），JSON 数组                                                                                                   |
+| `DEFAULT_RECOMMEND_SOURCE` | 否  | 首页推荐数据源默认值（`douban` / `bangumi` / `hot-list`，出厂默认 `hot-list`）；仅对未在设置中主动选择过的用户生效                                                                              |
+| `DISABLE_AUTH`             | 否  | 设为 `1` 关闭登录密码（仅限可信内网/本地环境）                                                                                                                                   |
+| `REQUEST_TIMEOUT`          | 否  | 代理上游请求超时（毫秒），默认 8000                                                                                                                                         |
+| `MAX_RETRIES`              | 否  | 代理请求重试次数，默认 1                                                                                                                                                |
+| `SEARCH_MAX_PAGES`         | 否  | 每个搜索源最多抓取的页数（1-50，默认 5）                                                                                                                                      |
+| `SEARCH_SOURCE_TIMEOUT_MS` | 否  | 单个搜索源的总死线（毫秒，3s-60s，默认 10000）                                                                                                                                |
+| `USER_AGENT`               | 否  | 代理请求使用的 UA（豆瓣封面防盗链等场景），默认 Chrome UA                                                                                                                          |
+| `FALLBACK_CORS_PROXY`      | 否  | 豆瓣推荐数据直连被拒时降级使用的 CORS 代理地址                                                                                                                                   |
+| `COOKIE_SECURE`            | 否  | 显式覆盖会话 cookie 的 `Secure` 标记；反向代理未正确传递 `x-forwarded-proto` 导致 HTTPS 下登录失效时，设为 `true` 可解                                                                       |
+| `DEFAULT_IMAGE_MODE`       | 否  | 图片加载模式（`proxy` / `direct` 等），控制封面是否走代理                                                                                                                       |
+| `UPSTREAM_PROXY`           | 否  | 服务端拉取上游时的出口代理地址（如 `http://127.0.0.1:7897`），用于源站需要科学上网的场景                                                                                                     |
 
-> * 面向公众部署时强烈建议填写，否则站点无内容可用。
+> - 面向公众部署时强烈建议填写，否则站点无内容可用。
 
 ## 使用说明
 
