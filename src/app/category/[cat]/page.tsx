@@ -300,7 +300,12 @@ function CategoryContent() {
 
         {/* 结果区 */}
         {query.isLoading ? (
-          <LoadingState label="加载中…" className="py-20" />
+          // 骨架屏：提前占位 24 卡，首屏预热命中时一闪而过，源站慢时也比纯转圈体感更快
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+            {Array.from({ length: 24 }).map((_, i) => (
+              <div key={i} className="aspect-[2/3] rounded-lg bg-surface/50 animate-pulse" />
+            ))}
+          </div>
         ) : query.isError && list.length === 0 ? (
           <ErrorState
             message="片单加载失败，可能是上游源响应慢或本地代理没开，点重试再拉一次"

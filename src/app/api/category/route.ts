@@ -43,12 +43,55 @@ const PAGE_TIMEOUT_MS = (() => {
  * - AREA_WINDOW_PAGES：地区过滤取样（最近更新的 500 部，实测覆盖主要地区；
  *   并发 25 页约 9 秒，可接受，且结果有 60s 缓存）
  */
-const SORT_WINDOW_PAGES = 5;
+// 排序窗口从 5 页降到 3 页（60 部）：足够排首屏 24 条，冷启动更快；
+// 配合下方「窗口预热」后用户几乎永远命中缓存。
+const SORT_WINDOW_PAGES = 3;
 const AREA_WINDOW_PAGES = 25;
 
 /** 窗口结果短时缓存，避免翻页 / 切地区时反复拉同一批上游页 */
 const WINDOW_TTL_MS = 60_000;
 const windowCache = new Map<string, { ts: number; items: SearchResultItem[] }>();
+
+/**
+ * 窗口预热：高频「评分 / 播放量」排序组合在后台持续刷新，保证缓存常驻。
+ * 用户首次进入分类页（尤其是「高分好评」这类窗口模式）直接命中缓存，
+ * 首屏从「冷启动并发拉 N 页（2s+）」降到「命中缓存（<50ms）」。
+ * stale-while-revalidate：刷新周期(40s) < TTL(60s)，热数据永不对用户过期。
+ */
+const WARM_SOURCE: SourceConfig = {
+  key: 'env_0',
+  name: '暴风资源',
+  url: 'https://bfzyapi.com/api.php/provide/vod',
+  detail: 'https://bfzyapi.com',
+  isAdult: false,
+};
+// 电影各二级子类的 type_id（与 categories.ts 的 bfzy 映射一致）
+const WARM_T = [21, 22, 23, 24, 25, 26, 27, 28, 51];
+const WARM_SORTS = ['score', 'hot'] as const;
+
+async function refreshWindow(t: number, sort: 'score' | 'hot'): Promise<void> {
+  const base = WARM_SOURCE.url.replace(/\/+$/, '');
+  const windowPages = SORT_WINDOW_PAGES;
+  const cacheKey = `${base}|${t}|w${windowPages}|true`;
+  try {
+    const items = await buildWindow(base, WARM_SOURCE, t, windowPages, true);
+    if (items) windowCache.set(cacheKey, { ts: Date.now(), items });
+  } catch {
+    // 预热失败不影响线上请求，下次周期再试
+  }
+}
+
+let warmupStarted = (globalThis as { __catWarmup?: boolean }).__catWarmup;
+if (!warmupStarted) {
+  (globalThis as { __catWarmup?: boolean }).__catWarmup = true;
+  const tick = () => {
+    for (const t of WARM_T) {
+      for (const s of WARM_SORTS) void refreshWindow(t, s);
+    }
+  };
+  tick(); // 启动即预热一轮，避免首访冷启动
+  setInterval(tick, 40_000);
+}
 
 /** 按分类 + 排序拉一页上游数据；失败返回 null（窗口取样允许部分页失败） */
 async function fetchPage(
@@ -67,6 +110,34 @@ async function fetchPage(
   } catch {
     return null;
   }
+}
+
+/**
+ * 按分类 + 窗口页数并发拉源站页，合并去重后返回（窗口取样核心逻辑，供请求与预热共用）。
+ * 允许部分页失败（窗口取样不要求全页成功）。
+ */
+async function buildWindow(
+  base: string,
+  source: SourceConfig,
+  t: number,
+  windowPages: number,
+  filterAdult: boolean
+): Promise<SearchResultItem[] | null> {
+  const pages = await Promise.all(
+    Array.from({ length: windowPages }, (_, i) => fetchPage(base, source, t, i + 1, filterAdult))
+  );
+  const ok = pages.filter((p): p is SearchResultItem[] => Array.isArray(p));
+  if (ok.length === 0) return null;
+  const seen = new Set<string>();
+  const merged: SearchResultItem[] = [];
+  for (const page of ok) {
+    for (const item of page) {
+      if (!item.vodId || seen.has(item.vodId)) continue;
+      seen.add(item.vodId);
+      merged.push(item);
+    }
+  }
+  return merged;
 }
 
 /**
@@ -204,24 +275,10 @@ export async function POST(req: Request) {
   if (cached && Date.now() - cached.ts < WINDOW_TTL_MS) {
     items = cached.items;
   } else {
-    const pages = await Promise.all(
-      Array.from({ length: windowPages }, (_, i) => fetchPage(base, source, t, i + 1, filterAdult))
-    );
-    const ok = pages.filter((p): p is SearchResultItem[] => Array.isArray(p));
-    if (ok.length === 0) {
+    items = await buildWindow(base, source, t, windowPages, filterAdult);
+    if (!items) {
       return NextResponse.json({ error: '分类请求失败' }, { status: 502 });
     }
-    // 合并去重（翻页期间源站新增会导致同一部片出现在相邻页）
-    const seen = new Set<string>();
-    const merged: SearchResultItem[] = [];
-    for (const page of ok) {
-      for (const item of page) {
-        if (!item.vodId || seen.has(item.vodId)) continue;
-        seen.add(item.vodId);
-        merged.push(item);
-      }
-    }
-    items = merged;
     windowCache.set(cacheKey, { ts: Date.now(), items });
   }
 
