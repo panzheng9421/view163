@@ -1,15 +1,23 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from '@/components/providers';
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/site';
 
 export const metadata: Metadata = {
+  // 绝对地址的基准，sitemap / OpenGraph / canonical 都靠它拼出完整 URL
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: 'view163 - 免费在线视频搜索与观看平台',
-    template: '%s - view163',
+    default: `${SITE_NAME} - 免费在线视频搜索与观看平台`,
+    template: `%s - ${SITE_NAME}`,
   },
-  description:
-    'view163 是一个免费的在线视频搜索平台，无广告、安全，提供来自多个视频源的内容搜索与观看服务，无需注册即可使用。',
+  description: SITE_DESCRIPTION,
   manifest: '/manifest.webmanifest',
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    description: SITE_DESCRIPTION,
+    url: '/',
+  },
   icons: {
     icon: [
       // SVG 优先：现代浏览器（标签页）优先采用，矢量任意缩放都清晰

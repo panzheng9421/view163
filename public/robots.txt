@@ -1,2 +1,10 @@
 User-agent: *
 Allow: /
+
+# 接口与代理路径没有可收录内容，禁掉可省爬虫带宽，也避免被误索引
+Disallow: /api/
+Disallow: /watch
+
+# 站点地图：静态页 / 分类页 / 榜单页 / 探索页
+# 搜索结果页与片源详情页是动态生成的，无稳定 URL，故不在清单内
+Sitemap: https://view163.com/sitemap.xml
