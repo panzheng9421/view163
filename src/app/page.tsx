@@ -174,7 +174,8 @@ function HomeContent() {
       return;
     }
     if (selectedSources.length === 0) {
-      toast('请先在设置中添加并勾选点播源', 'warning');
+      // 源由服务端下发，公众站不再提供「设置里加源」的入口：这里按暂时不可用提示
+      toast('点播源暂时不可用，请稍后重试', 'warning');
       return;
     }
     router.push(`/?s=${encodeURIComponent(query)}`, { scroll: false });

@@ -31,9 +31,11 @@ import { syncSourceSubscription } from '@/lib/subscription-sync';
 import { describeParseStats } from '@/lib/tvbox-parser';
 
 /**
- * 设置抽屉：顶部两级导航。
- * - 一级按性质分组：源管理 / 偏好设置 / 数据；
- * - 二级为该分组下的具体面板，每次只渲染一类内容，避免源很多时长距离滚动。
+ * 设置抽屉：两级导航。
+ * - 一级按性质分组，二级为该分组下的具体面板，每次只渲染一类内容。
+ * - 当前（用户 2026-10-18 定）只对访客暴露「偏好设置」一个一级分组：
+ *   源管理 / 数据（配置导入导出）不对外开放，否则访客能删源、改源、导出配置。
+ *   面板代码全部保留在下方，需要恢复时把对应项加回 PRIMARY_TABS 即可。
  * 选中位置记忆到 localStorage，再次打开回到上次所在面板。
  */
 
@@ -41,9 +43,10 @@ type PrimaryTab = 'sources' | 'prefs' | 'data';
 type SecondaryTab = 'vod' | 'subs' | 'playback' | 'image' | 'home' | 'io';
 
 const PRIMARY_TABS: { id: PrimaryTab; label: string; icon: IconName }[] = [
-  { id: 'sources', label: '源管理', icon: 'link' },
-  { id: 'prefs', label: '偏好设置', icon: 'gear' },
-  { id: 'data', label: '数据', icon: 'download' },
+  // 已隐藏（加回即恢复）：
+  // { id: 'sources', label: '源管理', icon: 'link' },
+  { id: 'prefs', label: '我的', icon: 'gear' },
+  // { id: 'data', label: '数据', icon: 'download' },
 ];
 
 const SECONDARY_TABS: Record<PrimaryTab, { id: SecondaryTab; label: string }[]> = {
@@ -64,7 +67,7 @@ const SECONDARY_TABS: Record<PrimaryTab, { id: SecondaryTab; label: string }[]> 
 const TAB_STORAGE_KEY = 'libretv-settings-tab';
 
 export function SourceManagerDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [primary, setPrimary] = useState<PrimaryTab>('sources');
+  const [primary, setPrimary] = useState<PrimaryTab>('prefs');
   const [secondary, setSecondary] = useState<Record<PrimaryTab, SecondaryTab>>({
     sources: 'vod',
     prefs: 'playback',
@@ -83,7 +86,11 @@ export function SourceManagerDrawer({ open, onClose }: { open: boolean; onClose:
       // 旧版把「数据源订阅」放在「数据」下，现已迁至「源管理」：自动重定向到新位置
       const migratedSubs = saved.secondary?.data === 'subs';
       const targetPrimary = migratedSubs && saved.primary === 'data' ? 'sources' : saved.primary;
-      if (targetPrimary && SECONDARY_TABS[targetPrimary]) setPrimary(targetPrimary);
+      // 只接受当前暴露的一级分组：旧记录停在源管理/数据时回落到偏好设置，
+      // 否则打开抽屉会看到已被隐藏的面板（且普通访客无从切回）
+      if (targetPrimary && PRIMARY_TABS.some((t) => t.id === targetPrimary)) {
+        setPrimary(targetPrimary);
+      }
       setSecondary((prev) => {
         const next = { ...prev };
         if (migratedSubs) next.sources = 'subs';
@@ -115,6 +122,7 @@ export function SourceManagerDrawer({ open, onClose }: { open: boolean; onClose:
       title="设置"
       resetScrollKey={current}
       subheader={
+        // 一级只暴露「我的」一个分组，单项时仍渲染导航条，让访客看到入口标签
         <div className="space-y-2">
           <TabRow tabs={PRIMARY_TABS} value={primary} onChange={setPrimary} variant="primary" ariaLabel="设置分类" />
           {/* 分组下只有一项时无需二级导航，直接展示该面板 */}
