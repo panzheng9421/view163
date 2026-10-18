@@ -86,6 +86,7 @@ L.append("bind-address: '*'")
 L.append("mode: rule")
 L.append("log-level: info")
 L.append("geo-auto-update: false")
+L.append("geodata-mode: dat")
 L.append("")
 # 镜像用户本地 Clash 的「规则模式」：国内源直连（阿里云北京到国内源本就快，
 # 比绕海外节点还快），海外/CF 源走节点；fake-ip 让被代理的域名在节点侧远程解析，
