@@ -41,22 +41,63 @@ const PAGE_TIMEOUT_MS = (() => {
  * 取样窗口页数：
  * - SORT_WINDOW_PAGES：hot/score 排序取样（最近更新的 100 部，够排）
  * - AREA_WINDOW_PAGES：地区过滤取样（最近更新的 500 部，实测覆盖主要地区；
- *   并发 25 页约 9 秒，可接受，且结果有 60s 缓存）
+ *   并发 25 页约 9 秒，冷启动可接受，且结果进长期缓存（默认 30 天）基本只算一次）
  */
 // 排序窗口从 5 页降到 3 页（60 部）：足够排首屏 24 条，冷启动更快；
 // 配合下方「窗口预热」后用户几乎永远命中缓存。
 const SORT_WINDOW_PAGES = 3;
 const AREA_WINDOW_PAGES = 25;
 
-/** 窗口结果短时缓存，避免翻页 / 切地区时反复拉同一批上游页 */
-const WINDOW_TTL_MS = 60_000;
+/**
+ * 窗口结果缓存。分类榜单（评分 / 热度 / 地区筛选）源站数据变化极慢，
+ * 不像首页实时榜单需要分钟级新鲜度，故默认缓存 30 天，用「后台预热」代替用户触发的冷启动。
+ * 环境变量 CATEGORY_WINDOW_TTL_MS 可配（毫秒）；想回到分钟级新鲜度设小即可。
+ * 缓存条目按 LRU 淘汰，上限 CATEGORY_WINDOW_CACHE_MAX（默认 200），防止长 TTL 下内存无限增长。
+ */
+const WINDOW_TTL_MS = (() => {
+  const n = parseInt(process.env.CATEGORY_WINDOW_TTL_MS || String(30 * 24 * 60 * 60 * 1000), 10);
+  return Number.isFinite(n) && n >= 1000 ? n : 30 * 24 * 60 * 60 * 1000;
+})();
+const WINDOW_CACHE_MAX = (() => {
+  const n = parseInt(process.env.CATEGORY_WINDOW_CACHE_MAX || '200', 10);
+  return Number.isFinite(n) && n >= 20 ? n : 200;
+})();
+
+/**
+ * 窗口缓存（LRU）。Map 保持插入顺序：命中时先删再插 = 移到末尾；
+ * 超限时从头部（最久未用）开始淘汰。
+ */
 const windowCache = new Map<string, { ts: number; items: SearchResultItem[] }>();
+
+function windowCacheGet(key: string): SearchResultItem[] | null {
+  const hit = windowCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.ts >= WINDOW_TTL_MS) {
+    windowCache.delete(key);
+    return null;
+  }
+  // LRU：重新插入把它移到末尾
+  windowCache.delete(key);
+  windowCache.set(key, hit);
+  return hit.items;
+}
+
+function windowCacheSet(key: string, items: SearchResultItem[]): void {
+  windowCache.delete(key);
+  windowCache.set(key, { ts: Date.now(), items });
+  while (windowCache.size > WINDOW_CACHE_MAX) {
+    const oldest = windowCache.keys().next();
+    if (oldest.done) break;
+    windowCache.delete(oldest.value);
+  }
+}
 
 /**
  * 窗口预热：高频「评分 / 播放量」排序组合在后台持续刷新，保证缓存常驻。
  * 用户首次进入分类页（尤其是「高分好评」这类窗口模式）直接命中缓存，
  * 首屏从「冷启动并发拉 N 页（2s+）」降到「命中缓存（<50ms）」。
- * stale-while-revalidate：刷新周期(40s) < TTL(60s)，热数据永不对用户过期。
+ * 缓存 TTL 现在默认 30 天，刷新只为了让数据保持「日级新鲜」并覆盖冷门分类首次访问，
+ * 周期默认 6 小时（环境变量 CATEGORY_WARM_INTERVAL_MS 可配，毫秒），远小于 TTL。
  */
 const WARM_SOURCE: SourceConfig = {
   key: 'env_0',
@@ -68,6 +109,11 @@ const WARM_SOURCE: SourceConfig = {
 // 电影各二级子类的 type_id（与 categories.ts 的 bfzy 映射一致）
 const WARM_T = [21, 22, 23, 24, 25, 26, 27, 28, 51];
 const WARM_SORTS = ['score', 'hot'] as const;
+/** 预热周期，默认 6 小时（远小于 30 天 TTL，只做日级保鲜与冷门分类覆盖） */
+const WARM_INTERVAL_MS = (() => {
+  const n = parseInt(process.env.CATEGORY_WARM_INTERVAL_MS || String(6 * 60 * 60 * 1000), 10);
+  return Number.isFinite(n) && n >= 60_000 ? n : 6 * 60 * 60 * 1000;
+})();
 
 async function refreshWindow(t: number, sort: 'score' | 'hot'): Promise<void> {
   const base = WARM_SOURCE.url.replace(/\/+$/, '');
@@ -75,7 +121,7 @@ async function refreshWindow(t: number, sort: 'score' | 'hot'): Promise<void> {
   const cacheKey = `${base}|${t}|w${windowPages}|true`;
   try {
     const items = await buildWindow(base, WARM_SOURCE, t, windowPages, true);
-    if (items) windowCache.set(cacheKey, { ts: Date.now(), items });
+    if (items) windowCacheSet(cacheKey, items);
   } catch {
     // 预热失败不影响线上请求，下次周期再试
   }
@@ -90,7 +136,7 @@ if (!warmupStarted) {
     }
   };
   tick(); // 启动即预热一轮，避免首访冷启动
-  setInterval(tick, 40_000);
+  setInterval(tick, WARM_INTERVAL_MS);
 }
 
 /** 按分类 + 排序拉一页上游数据；失败返回 null（窗口取样允许部分页失败） */
@@ -270,16 +316,13 @@ export async function POST(req: Request) {
   // ── 窗口模式：地区过滤 或 hot/score 排序 ──
   const windowPages = areaActive ? AREA_WINDOW_PAGES : SORT_WINDOW_PAGES;
   const cacheKey = `${base}|${t}|w${windowPages}|${filterAdult}`;
-  const cached = windowCache.get(cacheKey);
-  let items: SearchResultItem[] | null = null;
-  if (cached && Date.now() - cached.ts < WINDOW_TTL_MS) {
-    items = cached.items;
-  } else {
+  let items = windowCacheGet(cacheKey);
+  if (!items) {
     items = await buildWindow(base, source, t, windowPages, filterAdult);
     if (!items) {
       return NextResponse.json({ error: '分类请求失败' }, { status: 502 });
     }
-    windowCache.set(cacheKey, { ts: Date.now(), items });
+    windowCacheSet(cacheKey, items);
   }
 
   // 地区过滤（源站 area= 参数被忽略，只能本地按归一化标签筛）
