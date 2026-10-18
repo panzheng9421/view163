@@ -33,20 +33,17 @@ import { describeParseStats } from '@/lib/tvbox-parser';
 /**
  * 设置抽屉：两级导航。
  * - 一级按性质分组，二级为该分组下的具体面板，每次只渲染一类内容。
- * - 当前（用户 2026-10-18 定）只对访客暴露「偏好设置」一个一级分组：
- *   源管理 / 数据（配置导入导出）不对外开放，否则访客能删源、改源、导出配置。
- *   面板代码全部保留在下方，需要恢复时把对应项加回 PRIMARY_TABS 即可。
+ * - 当前暴露的一级分组：偏好设置 / 我的账号，可在顶部导航条切换。
+ *   源管理 / 数据（配置导入导出）面板代码保留在下方，但未在导航暴露。
  * 选中位置记忆到 localStorage，再次打开回到上次所在面板。
  */
 
-type PrimaryTab = 'sources' | 'prefs' | 'data';
-type SecondaryTab = 'vod' | 'subs' | 'playback' | 'image' | 'home' | 'io';
+type PrimaryTab = 'sources' | 'prefs' | 'data' | 'account';
+type SecondaryTab = 'vod' | 'subs' | 'playback' | 'image' | 'home' | 'io' | 'profile';
 
 const PRIMARY_TABS: { id: PrimaryTab; label: string; icon: IconName }[] = [
-  // 已隐藏（加回即恢复）：
-  // { id: 'sources', label: '源管理', icon: 'link' },
-  { id: 'prefs', label: '我的', icon: 'gear' },
-  // { id: 'data', label: '数据', icon: 'download' },
+  { id: 'prefs', label: '偏好设置', icon: 'gear' },
+  { id: 'account', label: '我的账号', icon: 'user' },
 ];
 
 const SECONDARY_TABS: Record<PrimaryTab, { id: SecondaryTab; label: string }[]> = {
@@ -61,6 +58,7 @@ const SECONDARY_TABS: Record<PrimaryTab, { id: SecondaryTab; label: string }[]> 
     // 隐藏后其设置固定走 store 默认值：封面直连优先、首页推荐开启、影视榜单数据源。
     { id: 'playback', label: '播放与过滤' },
   ],
+  account: [{ id: 'profile', label: '账号' }],
   data: [{ id: 'io', label: '配置导入导出' }],
 };
 
@@ -71,6 +69,7 @@ export function SourceManagerDrawer({ open, onClose }: { open: boolean; onClose:
   const [secondary, setSecondary] = useState<Record<PrimaryTab, SecondaryTab>>({
     sources: 'vod',
     prefs: 'playback',
+    account: 'profile',
     data: 'io',
   });
 
@@ -86,8 +85,7 @@ export function SourceManagerDrawer({ open, onClose }: { open: boolean; onClose:
       // 旧版把「数据源订阅」放在「数据」下，现已迁至「源管理」：自动重定向到新位置
       const migratedSubs = saved.secondary?.data === 'subs';
       const targetPrimary = migratedSubs && saved.primary === 'data' ? 'sources' : saved.primary;
-      // 只接受当前暴露的一级分组：旧记录停在源管理/数据时回落到偏好设置，
-      // 否则打开抽屉会看到已被隐藏的面板（且普通访客无从切回）
+      // 只接受 PRIMARY_TABS 内已知的一级分组，未知 id 回落到默认「偏好设置」
       if (targetPrimary && PRIMARY_TABS.some((t) => t.id === targetPrimary)) {
         setPrimary(targetPrimary);
       }
@@ -122,7 +120,7 @@ export function SourceManagerDrawer({ open, onClose }: { open: boolean; onClose:
       title="设置"
       resetScrollKey={current}
       subheader={
-        // 一级只暴露「我的」一个分组，单项时仍渲染导航条，让访客看到入口标签
+        // 一级导航：偏好设置 / 我的账号，可左右切换
         <div className="space-y-2">
           <TabRow tabs={PRIMARY_TABS} value={primary} onChange={setPrimary} variant="primary" ariaLabel="设置分类" />
           {/* 分组下只有一项时无需二级导航，直接展示该面板 */}
@@ -144,6 +142,7 @@ export function SourceManagerDrawer({ open, onClose }: { open: boolean; onClose:
       {current === 'home' && <HomePanel />}
       {current === 'subs' && <SourceSubscriptions />}
       {current === 'io' && <ConfigIoPanel />}
+      {current === 'profile' && <AccountPanel />}
     </Drawer>
   );
 }
@@ -567,6 +566,55 @@ function PlaybackPanel() {
         />
       </div>
       <VideoCachePanel />
+    </section>
+  );
+}
+
+/** 我的账号：访问状态（来自 /api/status）+ 本机数据存储说明 */
+function AccountPanel() {
+  const { checked, verified, setupRequired, version, openLogin, logout } = useAuth();
+
+  return (
+    <section>
+      <SectionTitle title="我的账号" />
+      <div className="space-y-3">
+        <div className="rounded-lg border border-line p-3 space-y-2">
+          <div className="text-sm font-medium text-content">访问状态</div>
+          {!checked ? (
+            <div className="text-xs text-faint">检测中…</div>
+          ) : setupRequired ? (
+            <div className="text-xs text-content">站点未设置访问密码（公开访问）</div>
+          ) : verified ? (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-content">已登录</span>
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="px-2 py-1 rounded bg-chip text-content hover:bg-hover transition-colors"
+              >
+                退出登录
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-content">未登录</span>
+              <button
+                type="button"
+                onClick={openLogin}
+                className="px-2 py-1 rounded bg-chip text-content hover:bg-hover transition-colors"
+              >
+                登录
+              </button>
+            </div>
+          )}
+          {version && <div className="text-xs text-faint">版本 v{version}</div>}
+        </div>
+
+        <div className="rounded-lg border border-line p-3 space-y-2">
+          <div className="text-sm font-medium text-content">本机数据</div>
+          <div className="text-[11px] text-faint">偏好设置与观看进度保存在你当前浏览器（IndexedDB），换设备不会共享</div>
+        </div>
+      </div>
     </section>
   );
 }
