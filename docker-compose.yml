@@ -51,3 +51,30 @@ services:
       # - USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36
       # 可选：影视榜单推荐源（60s API）实例地址，官方公共实例有限流
       # - 60S_API_BASE=https://60s.crystelf.top
+      # 分类榜单缓存后端（Redis）。留空则自动降级为进程内小容量 LRU。
+      # Redis 是独立进程 + maxmemory 硬封顶，缓存撑爆也不会拖垮 Next 主进程。
+      - CATEGORY_REDIS_URL=${CATEGORY_REDIS_URL:-redis://redis:6379}
+      # 分类窗口缓存时长（毫秒，默认 30 天）。分类榜单源站数据变化极慢，
+      # 无需分钟级新鲜度；首页实时榜单（豆瓣 / 60s）不走这个缓存。
+      - CATEGORY_WINDOW_TTL_MS=${CATEGORY_WINDOW_TTL_MS:-2592000000}
+      # 预热周期（毫秒，默认 6 小时）：后台刷新热门分类，只做日级保鲜与冷门分类覆盖
+      - CATEGORY_WARM_INTERVAL_MS=${CATEGORY_WARM_INTERVAL_MS:-21600000}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # 分类榜单缓存。纯缓存用途：关闭 RDB/AOF，重启后缓存丢失由启动预热自动补回。
+  redis:
+    image: redis:7-alpine
+    container_name: view163-redis
+    restart: unless-stopped
+    # maxmemory 硬封顶 + allkeys-lru：缓存超限只淘汰缓存，不影响主站；
+    # --save '' / --appendonly no：不做持久化，省磁盘 IO（缓存丢了能重拉）
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
