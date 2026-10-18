@@ -1,0 +1,18 @@
+[Unit]
+Description=Mihomo VPN proxy for view163 upstream
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/view163/vpn/mihomo -d /opt/view163/vpn run
+WorkingDirectory=/opt/view163/vpn
+Restart=always
+RestartSec=5
+User=root
+LimitNOFILE=1048576
+StandardOutput=append:/var/log/mihomo.log
+StandardError=append:/var/log/mihomo.log
+
+[Install]
+WantedBy=multi-user.target

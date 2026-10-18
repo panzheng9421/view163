@@ -42,11 +42,11 @@ services:
       - SEARCH_SOURCE_TIMEOUT_MS=${SEARCH_SOURCE_TIMEOUT_MS:-10000}
       # 可选：分类页单页上游超时（毫秒，默认 9000）。源站在境外/慢链路时可调大到 20000
       - CATEGORY_PAGE_TIMEOUT_MS=${CATEGORY_PAGE_TIMEOUT_MS:-9000}
-      # 可选：站内采集反代地址（宿主 nginx 的 /__proxy/ 口）。
-      # 容器里的 Node 直连部分源站会被 Cloudflare 按 TLS 指纹拦截，走这条由 nginx 的
-      # OpenSSL 指纹代拉。只影响采集接口（api.php），媒体流不受影响。
-      # 例：http://host.docker.internal:18080
-      - INGEST_PROXY_BASE=${INGEST_PROXY_BASE:-}
+      # 可选：上游请求统一代理（如 mihomo，监听宿主机 7890）。
+      # 采集接口(api.php)走此代理出口，绕开服务器 DNS 投毒 / 区域不可达 / Cloudflare 拦截；
+      # 媒体(m3u8/ts)由 proxy-handlers 直连优先、代理兜底，不受影响。
+      # 例：http://host.docker.internal:7890
+      - UPSTREAM_PROXY=${UPSTREAM_PROXY:-}
       # 可选：代理请求 UA（豆瓣防盗链等场景）
       # - USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36
       # 可选：影视榜单推荐源（60s API）实例地址，官方公共实例有限流
