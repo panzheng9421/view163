@@ -12,8 +12,11 @@ services:
       - "8080:8080"
     # 无状态服务：观看历史在浏览器 IndexedDB、设置在 localStorage，无需挂载卷
     environment:
-      # 必填：访问密码（在 .env 中设置，缺失时 compose 启动即报错提醒）
-      - PASSWORD=${PASSWORD:?请在 .env 中设置 PASSWORD}
+      # 访问密码（在 .env 中设置）。公网部署务必设置；仅内网/自用且已开 DISABLE_AUTH 时可不设。
+      - PASSWORD=${PASSWORD:-}
+      # 可选：设为 true 彻底关闭访问密码（自用/内网部署）。公网开放且未设密码时请勿开启，
+      # 否则任何拿到域名的人都能直接使用。
+      - DISABLE_AUTH=${DISABLE_AUTH:-false}
       # 可选：会话/代理签名密钥（多实例部署建议显式设置：openssl rand -hex 32）
       # - PROXY_SECRET=your-secret
       # 可选：Cookie Secure 策略覆盖（true=强制开启 / false=强制关闭；不设置时按请求协议自动推导，HTTP 部署无需配置）

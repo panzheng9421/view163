@@ -78,12 +78,12 @@ PASSWORD=dev-password npm run dev   # http://localhost:8080
 
 | 变量                         | 必填 | 说明                                                                                                                                                           |
 | -------------------------- | -- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PASSWORD`                 | 是  | 访问密码；未设置时站点会提示管理员配置                                                                                                                                          |
+| `PASSWORD`                 | 是* | 访问密码；未设置时站点会提示管理员配置。*仅当 `DISABLE_AUTH=true` 时可省略                                                                                                                     |
+| `DISABLE_AUTH`             | 否  | 设为 `true` 彻底关闭访问密码，进站即用、不弹验证框（自用 / 内网部署）。公网开放时勿开                                                                                                        |
 | `PROXY_SECRET`             | 否  | 会话/代理签名密钥；不设置时从 PASSWORD 派生（多实例部署建议显式设置）                                                                                                                     |
 | `DEFAULT_SOURCES`          | 否* | 预置点播源（JSON 数组），用户端自动出现且默认启用，如 `[{"name":"示例源","url":"https://example.com/api.php/provide/vod","detail":"https://example.com","isAdult":false}]`。**不填则全站无内容** |
 | `DEFAULT_SUBSCRIPTIONS`    | 否  | 预置数据源订阅（LibreTV-SourceList JSON 链接，也接受 TVBOX 配置地址），JSON 数组                                                                                                   |
 | `DEFAULT_RECOMMEND_SOURCE` | 否  | 首页推荐数据源默认值（`douban` / `bangumi` / `hot-list`，出厂默认 `hot-list`）；仅对未在设置中主动选择过的用户生效                                                                              |
-| `DISABLE_AUTH`             | 否  | 设为 `1` 关闭登录密码（仅限可信内网/本地环境）                                                                                                                                   |
 | `REQUEST_TIMEOUT`          | 否  | 代理上游请求超时（毫秒），默认 8000                                                                                                                                         |
 | `MAX_RETRIES`              | 否  | 代理请求重试次数，默认 1                                                                                                                                                |
 | `SEARCH_MAX_PAGES`         | 否  | 每个搜索源最多抓取的页数（1-50，默认 5）                                                                                                                                      |
