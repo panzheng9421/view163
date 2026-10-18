@@ -81,7 +81,7 @@ async function refreshWindow(t: number, sort: 'score' | 'hot'): Promise<void> {
   }
 }
 
-let warmupStarted = (globalThis as { __catWarmup?: boolean }).__catWarmup;
+const warmupStarted = (globalThis as { __catWarmup?: boolean }).__catWarmup;
 if (!warmupStarted) {
   (globalThis as { __catWarmup?: boolean }).__catWarmup = true;
   const tick = () => {
