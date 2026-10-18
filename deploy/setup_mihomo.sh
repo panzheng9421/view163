@@ -1,6 +1,7 @@
 #!/bin/sh
 # view163: 用用户订阅在服务器起 mihomo 代理，供 app 采集走干净出口
-# 路由策略：国内源 DIRECT（干净 DoH 防 GFW 投毒），CF/海外源走 PROXY（vless 节点）
+# 路由策略：完全镜像本地 Clash —— mode: global + fake-ip 远程解析 DNS，
+#          所有流量走 vless 节点，绕开 GFW 投毒/区域不可达，10 源全通。
 # 不依赖 geoip.mmdb（避免 mihomo 启动下载卡死）
 set -e
 
@@ -82,15 +83,16 @@ L = []
 L.append("mixed-port: 7890")
 L.append("allow-lan: true")
 L.append("bind-address: '*'")
-L.append("mode: rule")
+L.append("mode: global")
 L.append("log-level: info")
 L.append("")
-# 不启用 geodata：靠显式域名规则路由 + 干净 DoH 防污染，避免启动下载 mmdb 卡死
-# nameserver 用国内常规 DNS（和 nginx 反代一致，影视源站能拿到真 IP 直连通）；
-# fallback 用 doh.pub 仅救被 GFW 投毒的域名（360/ikun 等解析到 127.0.0.2 时）
+# 完全镜像用户本地 VPN（Clash）行为：所有流量走节点 + fake-ip 远程解析 DNS
+# 节点侧干净出口 + 远程 DNS 绕开 GFW 投毒，故 360/ikun 等被污染/区域不可达源也能复活。
+# 不依赖 geoip.mmdb（避免启动下载卡死）。
 L.append("dns:")
 L.append("  enable: true")
-L.append("  enhanced-mode: redir-host")
+L.append("  enhanced-mode: fake-ip")
+L.append("  fake-ip-range: 198.18.0.1/16")
 L.append("  use-hosts: true")
 L.append("  default-nameserver:")
 L.append("    - 223.5.5.5")
@@ -98,13 +100,6 @@ L.append("    - 119.29.29.29")
 L.append("  nameserver:")
 L.append("    - 223.5.5.5")
 L.append("    - 119.29.29.29")
-L.append("  fallback:")
-L.append("    - https://doh.pub/dns-query")
-L.append("  fallback-filter:")
-L.append("    ipcidr:")
-L.append("      - 127.0.0.0/8")
-L.append("      - 240.0.0.0/4")
-L.append("      - 0.0.0.0/32")
 L.append("")
 L.append("proxies:")
 for p in proxies:
@@ -113,7 +108,8 @@ for p in proxies:
     L.append(f"    server: {p['server']}")
     L.append(f"    port: {p['port']}")
     L.append(f"    uuid: {p['uuid']}")
-    L.append(f'    flow: "{p.get("flow", "")}"')
+    if p.get("flow"):
+        L.append(f'    flow: "{p["flow"]}"')
     L.append("    tls: true")
     if p.get("servername"):
         L.append(f"    servername: {p['servername']}")
@@ -144,12 +140,8 @@ L.append("    proxies:")
 for n in names:
     L.append(f'      - "{n}"')
 L.append("")
-# 国内源 DIRECT（干净 DoH 防投毒）；CF/海外源沿 MATCH->PROXY
+# global 模式下 rules 不生效，仅保留 MATCH 兜底（无害）
 L.append("rules:")
-for d in ["dyttzyapi.com", "ffzy5.tv", "360zy.com", "apibdzy.com",
-          "bfzyapi.com", "rycjapi.com", "ikunzyapi.com", "jszyapi.com",
-          "mdzyapi.com"]:
-    L.append(f"  - DOMAIN-SUFFIX,{d},DIRECT")
 L.append("  - MATCH,PROXY")
 L.append("")
 L.append("external-controller: 127.0.0.1:9090")
