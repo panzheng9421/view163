@@ -190,6 +190,20 @@ export function isAdultContent(typeName: string | undefined): boolean {
   return ADULT_KEYWORDS.some((k) => name.includes(k));
 }
 
+/**
+ * 成人内容过滤是否允许被关闭（用户 2026-10-18 定）：站点面向公众，不给关闭入口。
+ * 设置面板的「首页与内容」tab 已隐藏，同时这里兜住 API 直连——否则访客对
+ * /api/search 直接传 filterAdult:false 就能绕过界面限制拿到成人结果。
+ * 置为 false 可恢复「开关可用」的旧行为（需同时把该 tab 加回 SECONDARY_TABS）。
+ */
+export const ADULT_FILTER_ENFORCED = true;
+
+/** 归一化调用方意图：强制开启期间一律返回 true，否则按请求值（默认开） */
+export function resolveAdultFilter(requested?: boolean): boolean {
+  if (ADULT_FILTER_ENFORCED) return true;
+  return requested !== false;
+}
+
 export function filterAdultResults<T extends { typeName?: string }>(items: T[], enabled: boolean): T[] {
   if (!enabled) return items;
   return items.filter((item) => !isAdultContent(item.typeName));

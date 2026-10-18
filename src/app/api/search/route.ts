@@ -6,6 +6,7 @@ import {
   filterRelevantResults,
   healthWeight,
   parseSearchList,
+  resolveAdultFilter,
   scoreSearchResult,
 } from '@/lib/cms-parser';
 import { fetchUpstream, getCache, setCache } from '@/lib/fetch-utils';
@@ -248,7 +249,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: '请至少选择一个点播源' }, { status: 400 });
   }
   const sources = body.sources.slice(0, 50);
-  const filterAdult = body.filterAdult !== false;
+  const filterAdult = resolveAdultFilter(body.filterAdult);
 
   const cacheKey = searchCacheKey(wd, sources, filterAdult, body.health);
   const cached = getCache<SearchResponse>(cacheKey);

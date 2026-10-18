@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { SourceConfig, LiveSourceConfig, SourceHealthHint, SourceSearchOutcome } from './types';
 import { clearLiveProbeResultsDb, loadLiveProbeResults, saveLiveProbeResults } from './db';
+import { ADULT_FILTER_ENFORCED } from './cms-parser';
 import { PERSIST_KEY, createThrottledStorage } from './persist-storage';
 
 /**
@@ -671,6 +672,13 @@ export const useAppStore = create<AppState>()(
       name: PERSIST_KEY,
       // 节流写入：搜索 / 测活等高频 set 不再每次都整份序列化写盘
       storage: createJSONStorage(createThrottledStorage),
+      // 成人过滤固定开启时，本地快照里的关闭值一律修正为 true：
+      // 否则存量用户（或手改 localStorage 的人）会看到「设置已关、源可勾选」但结果仍被服务端过滤的割裂状态
+      merge: (persisted, current) => {
+        const merged = { ...current, ...(persisted as Partial<AppState>) } as AppState;
+        if (ADULT_FILTER_ENFORCED) merged.yellowFilter = true;
+        return merged;
+      },
       // v1：直播源新增归属字段、最近观看新增 sourceUrl。
       // v2：直播源归属改为多引用（fromSubscription 单值 → fromSubscriptions 数组）。
       // 此前未声明 version 的存量数据会被视为 v0 并走 migrate 补齐。

@@ -52,9 +52,11 @@ const SECONDARY_TABS: Record<PrimaryTab, { id: SecondaryTab; label: string }[]> 
     { id: 'subs', label: '数据源订阅' },
   ],
   prefs: [
+    // 「封面图加载」「首页与内容」两个面板已从导航隐藏（用户 2026-10-18 定）：
+    // 站点面向公众，不提供关闭成人过滤的入口——面板代码仍在下方保留，
+    // 需要恢复时把 { id: 'image' } / { id: 'home' } 加回本数组即可。
+    // 隐藏后其设置固定走 store 默认值：封面直连优先、首页推荐开启、影视榜单数据源。
     { id: 'playback', label: '播放与过滤' },
-    { id: 'image', label: '封面图加载' },
-    { id: 'home', label: '首页与内容' },
   ],
   data: [{ id: 'io', label: '配置导入导出' }],
 };
@@ -252,7 +254,7 @@ function VodSourcesPanel() {
     const eligible = filtered.filter((s) => !(s.isAdult && store.yellowFilter)).map((s) => s.key);
     const skipped = filtered.length - eligible.length;
     store.setSelectedKeys([...new Set([...store.selectedKeys, ...eligible])]);
-    if (skipped > 0) toast(`已启用 ${eligible.length} 个；${skipped} 个成人源因过滤开启被跳过`, 'info');
+    if (skipped > 0) toast(`已启用 ${eligible.length} 个；${skipped} 个成人源因成人过滤固定开启被跳过`, 'info');
   };
 
   const runAll = async () => {
@@ -459,7 +461,7 @@ function VodSourceRow({
           checked={selected}
           onChange={() => useAppStore.getState().toggleSourceSelected(api.key)}
           disabled={adultBlocked}
-          title={adultBlocked ? '成人内容过滤开启中，需先关闭过滤才能启用此源' : undefined}
+          title={adultBlocked ? '成人内容过滤固定开启，成人内容源不参与搜索' : undefined}
           aria-label={`选择 ${api.name}`}
         />
         <div className="flex-1 min-w-0">

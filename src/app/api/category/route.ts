@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { guardRequest } from '@/lib/api-guard';
-import { cmsRequestHeaders, filterAdultResults, parseSearchList } from '@/lib/cms-parser';
+import { cmsRequestHeaders, filterAdultResults, parseSearchList, resolveAdultFilter } from '@/lib/cms-parser';
 import { fetchUpstream } from '@/lib/fetch-utils';
 import { checkUpstreamAllowed } from '@/lib/ssrf';
 import type { CategorySort, SearchResultItem, SourceConfig } from '@/lib/types';
@@ -112,7 +112,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: '请求格式错误' }, { status: 400 });
   }
 
-  const { source, filterAdult = true } = body;
+  const { source } = body;
+  const filterAdult = resolveAdultFilter(body.filterAdult);
   const t = Number(body.t);
   const pg = Math.min(Math.max(parseInt(String(body.pg ?? '1'), 10) || 1, 1), MAX_PG);
   const sort: CategorySort =
