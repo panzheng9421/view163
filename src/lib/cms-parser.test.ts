@@ -150,6 +150,28 @@ describe('成人内容过滤', () => {
     expect(isAdultContent(undefined)).toBe(false);
   });
 
+  // 2026-10-18 用户报「波多野结衣」搜出带「伦理」「理论片」标签的条目：
+  // 词表原先只写「伦理片」，而源站分类名就叫「伦理」，includes 匹配不上 → 整类漏过
+  it('伦理词根与错别字变体都能识别', () => {
+    expect(isAdultContent('伦理')).toBe(true);
+    expect(isAdultContent('伦理片')).toBe(true);
+    expect(isAdultContent('日本伦理')).toBe(true);
+    expect(isAdultContent('理论片')).toBe(true);
+    expect(isAdultContent('倫理')).toBe(true);
+  });
+
+  it('分类名的空格/大小写变体不影响匹配', () => {
+    expect(isAdultContent('伦理 片')).toBe(true);
+    expect(isAdultContent('Cosplay')).toBe(true);
+    expect(isAdultContent('SWAG')).toBe(true);
+  });
+
+  it('常规分类不误杀', () => {
+    for (const t of ['剧情片', '动作片', '喜剧片', '爱情片', '悬疑片', '纪录片', '动漫', '国产剧', '日韩剧', '综艺', '电影解说']) {
+      expect(isAdultContent(t), t).toBe(false);
+    }
+  });
+
   it('filterAdultResults 按开关过滤', () => {
     const items = [{ typeName: '伦理片' }, { typeName: '写真热舞' }, { typeName: '剧情片' }];
     expect(filterAdultResults(items, true)).toEqual([{ typeName: '剧情片' }]);
