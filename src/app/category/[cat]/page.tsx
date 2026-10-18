@@ -8,7 +8,7 @@ import { BackToTop } from '@/components/back-to-top';
 import { AggregatedCard, aggregateResults } from '@/components/video-card';
 import { DetailModal } from '@/components/detail-modal';
 import { SiteFooter } from '@/components/site-footer';
-import { EmptyState, LoadingState, ErrorState, Spinner } from '@/components/states';
+import { EmptyState, ErrorState, Spinner } from '@/components/states';
 import { useAppStore, resolveSource, isInDisabledSubscription, rankSourcesByHealth } from '@/lib/store';
 import { api, fetchStatusWithRetry, STATUS_QUERY_KEY } from '@/lib/client-api';
 import type { SearchResultItem, CategoryKey, CategorySort, CategoryResponse, SourceConfig } from '@/lib/types';
