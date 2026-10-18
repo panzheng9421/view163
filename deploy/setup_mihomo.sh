@@ -100,6 +100,10 @@ L.append("    - '*.lan'")
 L.append("    - '+.dyttzyapi.com'")
 L.append("    - '+.ffzy5.tv'")
 L.append("    - '+.apibdzy.com'")
+L.append("    - '+.douban.com'")
+L.append("    - '+.doubanio.com'")
+L.append("    - '+.crystelf.top'")
+L.append("    - '+.viki.moe'")
 L.append("  default-nameserver:")
 L.append("    - 223.5.5.5")
 L.append("    - 119.29.29.29")
@@ -146,11 +150,14 @@ L.append("    proxies:")
 for n in names:
     L.append(f'      - "{n}"')
 L.append("")
-# 仅实测稳定直连的 3 个国内源走 DIRECT（阿里云北京到它们最快）；
-# 暴风/魔都直连不稳（你本地本就是走节点），故移除让其沿 MATCH 走 PROXY；
-# 其余(CF 站/被污染/区域不可达)同样走节点。镜像本地 Clash 规则模式实际行为。
+# 规则分流（镜像本地 Clash 的智能分流）：
+#  - 实测稳定直连的国内采集源 → DIRECT
+#  - 豆瓣(m.douban.com 对海外 IP 拒绝，实测直连 200/代理 000) + 封面 CDN + 60s 榜单 API → DIRECT
+#  - 其余影视源(CF/污染/区域不可达) → PROXY（vless 节点）
 L.append("rules:")
-for d in ["dyttzyapi.com", "ffzy5.tv", "apibdzy.com"]:
+for d in ["dyttzyapi.com", "ffzy5.tv", "apibdzy.com",
+          "douban.com", "doubanio.com",
+          "60s.crystelf.top", "60s.viki.moe", "viki.moe"]:
     L.append(f"  - DOMAIN-SUFFIX,{d},DIRECT")
 L.append("  - MATCH,PROXY")
 L.append("")
