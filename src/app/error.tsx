@@ -35,6 +35,16 @@ export default function ErrorPage({
             返回首页
           </Link>
         </p>
+        <p className="mt-1 text-center text-xs">
+          <a
+            href="https://beian.miit.gov.cn/"
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className="text-faint hover:text-muted transition-colors"
+          >
+            京ICP备2026052042号
+          </a>
+        </p>
       </footer>
     </div>
   );
