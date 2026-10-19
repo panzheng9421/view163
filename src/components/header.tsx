@@ -146,7 +146,7 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
           )}
 
           <nav className="flex items-center gap-1 shrink-0 ml-auto">
-            {/* 桌面端：关于 + 主题 + 观看历史 + 下载管理 全部留在顶栏 */}
+            {/* 桌面端：关于 + 主题 + 下载管理 留在顶栏 */}
             <div className="hidden md:flex items-center gap-0.5">
               <HeaderLink href="/about" active={pathname === '/about'}>
                 关于
@@ -155,14 +155,15 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
             <span className="hidden md:block w-px h-5 bg-line mx-1" />
             <div className="hidden md:flex items-center gap-1">
               <ThemeToggle />
-              <IconButton label="观看历史" onClick={() => setHistoryOpen(true)}>
-                <Icon name="clock" />
-              </IconButton>
               <IconButton label="下载管理" onClick={requestShowDownloadManager}>
                 <Icon name="download" />
               </IconButton>
             </div>
-            {/* 手机端：顶栏只留设置，关于/主题/历史/下载 全部收进设置抽屉的「更多」 */}
+            {/* 观看历史：两端都在顶栏、固定贴在设置齿轮左侧。
+                手机端此前只有「设置 → 我的账号 → 我的内容」三层入口，太深，已上提到一级。 */}
+            <IconButton label="观看历史" onClick={() => setHistoryOpen(true)}>
+              <Icon name="clock" />
+            </IconButton>
             <IconButton label="设置" onClick={() => setSettingsOpen(true)}>
               <Icon name="gear" />
             </IconButton>
@@ -170,15 +171,7 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
         </div>
       </header>
 
-      <SourceManagerDrawer
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        // 手机端顶栏不再有历史入口：设置抽屉里点「观看历史」→ 关抽屉、开历史面板
-        onOpenHistory={() => {
-          setSettingsOpen(false);
-          setHistoryOpen(true);
-        }}
-      />
+      <SourceManagerDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </>
   );

@@ -93,27 +93,62 @@ async function consumeNdjson<T>(res: Response, onEvent: (event: T) => void): Pro
  * 导致 statusQuery 永远 isLoading，分类页卡死在「正在准备片源…」。
  * 注意：仅用于一次性 JSON 接口；流式（/api/search?stream=1）不走这里。
  */
-async function request<T>(url: string, init?: RequestInit, timeoutMs = 20_000): Promise<T> {
-  let res: Response;
-  const signal = init?.signal
-    ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)])
-    : AbortSignal.timeout(timeoutMs);
-  try {
-    res = await fetch(url, { ...init, signal });
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err;
-    throw new ApiError('网络请求失败，请检查网络连接', 0);
-  }
-  throwForAuthStatus(res);
-  if (!res.ok) {
-    let msg = `请求失败 (${res.status})`;
+/**
+ * 通用 JSON 请求。
+ *
+ * 默认 20s 超时（调用方传了 signal 时与之合并）：
+ * dev 编译中 / 服务重启 / 代理挂起时，无超时的 fetch 会无限挂起，
+ * 导致 statusQuery 永远 isLoading，分类页卡死在「正在准备片源…」。
+ * 注意：仅用于一次性 JSON 接口；流式（/api/search?stream=1）不走这里。
+ *
+ * 失败自动重试（retries，默认 3 次 + 指数退避）：
+ * 上游偶发不稳定（TLS 断流 / 5xx）很常见，而这类错误对调用方透明——
+ * 重试成功用户根本看不到报错。仅对「网络层错误（含响应体读取断流）
+ * 与 5xx」重试；AbortError（主动取消）与 4xx（鉴权/参数问题）不重试。
+ * 注意：res.json() 必须在一处 try 内，否则读取阶段断流会抛出原生
+ * 英文 "fetch failed" 绕过中文兜底（旧代码正是该隐患）。
+ */
+async function request<T>(url: string, init?: RequestInit, timeoutMs = 20_000, retries = 3): Promise<T> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    // 外部已取消（关闭弹窗/卸载）：立即冒泡 AbortError，绝不重试
+    if (init?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    // 每次重试都重建 timeout signal：AbortSignal 触发后不可逆，复用会直接判定超时
+    const signal = init?.signal
+      ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs);
     try {
-      const data = (await res.json()) as { error?: string };
-      if (data?.error) msg = data.error;
-    } catch { /* 忽略解析失败 */ }
-    throw new ApiError(msg, res.status);
+      const res = await fetch(url, { ...init, signal });
+      throwForAuthStatus(res);
+      if (!res.ok) {
+        const retryable = res.status >= 500;
+        let msg = `请求失败 (${res.status})`;
+        if (!retryable) {
+          try {
+            const data = (await res.json()) as { error?: string };
+            if (data?.error) msg = data.error;
+          } catch { /* 忽略解析失败 */ }
+        }
+        throw new ApiError(msg, res.status);
+      }
+      return (await res.json()) as T;
+    } catch (err) {
+      // 主动取消：立即冒泡，不重试
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      // 鉴权态（401/503）：触发登录框，不重试
+      if (err instanceof ApiError && (err.status === 401 || err.status === 503)) throw err;
+      // 仅网络层错误（fetch 抛出 / 响应体读取断流）与 5xx 可重试；4xx 等直接抛
+      const isNetwork = !(err instanceof ApiError);
+      const isServer = err instanceof ApiError && err.status >= 500;
+      if (!isNetwork && !isServer) throw err;
+      // 网络层错误归一化为中文文案，避免把原生英文 "fetch failed" 透传给用户
+      lastErr = isNetwork ? new ApiError('网络请求失败，请检查网络连接', 0) : err;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(400 * 2 ** attempt, 2000)));
+      }
+    }
   }
-  return (await res.json()) as T;
+  throw lastErr instanceof Error ? lastErr : new ApiError('网络请求失败，请检查网络连接', 0);
 }
 
 /**
@@ -131,7 +166,8 @@ export async function fetchStatusWithRetry(attempts = 5): Promise<AuthStatusResp
   let lastErr: unknown = null;
   for (let i = 0; i < attempts; i += 1) {
     try {
-      return await request<AuthStatusResponse>('/api/status');
+      // 关闭 request 内部重试：本函数已自带 5 次外层重试，避免嵌套成 15 次请求
+      return await request<AuthStatusResponse>('/api/status', undefined, 20_000, 0);
     } catch (err) {
       // 主动取消（切页/卸载）不重试，直接冒泡
       if (err instanceof DOMException && err.name === 'AbortError') throw err;

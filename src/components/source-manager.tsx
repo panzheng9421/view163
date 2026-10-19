@@ -70,12 +70,9 @@ const TAB_STORAGE_KEY = 'libretv-settings-tab';
 export function SourceManagerDrawer({
   open,
   onClose,
-  onOpenHistory,
 }: {
   open: boolean;
   onClose: () => void;
-  /** 手机端「更多」里的观看历史入口：历史面板挂在 Header 上，需由上层打开 */
-  onOpenHistory?: () => void;
 }) {
   const [primary, setPrimary] = useState<PrimaryTab>('prefs');
   const [secondary, setSecondary] = useState<Record<PrimaryTab, SecondaryTab>>({
@@ -154,7 +151,7 @@ export function SourceManagerDrawer({
       {current === 'home' && <HomePanel />}
       {current === 'subs' && <SourceSubscriptions />}
       {current === 'io' && <ConfigIoPanel />}
-      {current === 'profile' && <AccountPanel onOpenHistory={onOpenHistory} onClose={onClose} />}
+      {current === 'profile' && <AccountPanel onClose={onClose} />}
     </Drawer>
   );
 }
@@ -163,7 +160,8 @@ export function SourceManagerDrawer({
  * 手机端所需入口已按语义归位：
  * - 主题 → 偏好设置 / 外观
  * - 关于本站 → 偏好设置 / 关于（仅手机端）
- * - 观看历史、下载管理 → 我的账号 / 我的内容（仅手机端）
+ * - 观看历史 → 顶栏齿轮左侧（两端都有，不再进设置）
+ * - 下载管理 → 我的账号 / 我的内容（仅手机端）
  */
 
 /** 一级/二级导航条（role=tablist，左右方向键切换） */
@@ -745,8 +743,8 @@ function PlaybackPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** 我的账号：访问状态（来自 /api/status）+ 我的内容（观看历史 / 下载，仅手机端）+ 本机数据说明 */
-function AccountPanel({ onOpenHistory, onClose }: { onOpenHistory?: () => void; onClose: () => void }) {
+/** 我的账号：访问状态（来自 /api/status）+ 我的内容（下载，仅手机端）+ 本机数据说明 */
+function AccountPanel({ onClose }: { onClose: () => void }) {
   const { checked, verified, setupRequired, version, openLogin, logout } = useAuth();
   const statusText = !checked ? '检测中…' : setupRequired ? '公开访问' : verified ? '已登录' : '未登录';
 
@@ -774,10 +772,9 @@ function AccountPanel({ onOpenHistory, onClose }: { onOpenHistory?: () => void; 
         </div>
       </SettingsGroup>
 
-      {/* 我的内容：桌面端顶栏已有历史/下载入口，这里只在手机端出现 */}
+      {/* 我的内容：观看历史已上提到顶栏（齿轮左侧，两端都有），这里只补手机端缺的下载入口 */}
       <div className="md:hidden">
         <SettingsGroup title="我的内容">
-          <SettingsLinkRow icon="clock" label="观看历史" onClick={() => onOpenHistory?.()} />
           <SettingsLinkRow
             icon="download"
             label="下载管理"

@@ -40,6 +40,8 @@ export function DetailModal({
   const [error, setError] = useState('');
   const [reversed, setReversed] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
+  /** 手动重试计数：自动重发全部失败后，用户点「重试」再走一轮 */
+  const [retryTick, setRetryTick] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -84,10 +86,13 @@ export function DetailModal({
         if (err instanceof DOMException && err.name === 'AbortError') return;
         setError(err instanceof Error ? err.message : '获取详情失败');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        // 被 abort 后不再改 loading，避免换片/关闭时闪一下错误态
+        if (!controller.signal.aborted) setLoading(false);
+      });
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item]);
+  }, [item, retryTick]);
 
   useEffect(() => {
     if (!item) return;
@@ -166,7 +171,12 @@ export function DetailModal({
         <div className="p-5 pt-4">
           {loading && <LoadingState label="正在获取剧集信息..." />}
 
-          {!loading && error && <ErrorState message={error || '获取失败'} />}
+          {!loading && error && (
+            <ErrorState
+              message={error || '获取失败'}
+              onRetry={() => setRetryTick((t) => t + 1)}
+            />
+          )}
 
           {!loading && !error && detail && (
             <>
